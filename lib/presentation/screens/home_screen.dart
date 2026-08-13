@@ -31,6 +31,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Trigger inbox refresh as soon as the screen is first rendered
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<MailProvider>().loadFoldersAndEmails();
+      }
+    });
   }
 
   @override
@@ -54,6 +60,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() {
       _currentIndex = index;
     });
+    // Refresh inbox data whenever user switches back to the inbox tab
+    if (index == 0) {
+      context.read<MailProvider>().loadFoldersAndEmails();
+    }
   }
 
   @override

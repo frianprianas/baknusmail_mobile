@@ -129,6 +129,15 @@ class MailProvider extends ChangeNotifier {
         _emails = cached;
         _updateFolderCounts();
 
+        // Auto-reconnect IMAP if disconnected (e.g. after app restart or session timeout)
+        if (!_imapService.isConnected) {
+          final email = _authProvider.currentUser?.email;
+          final password = _authProvider.currentUser?.password;
+          if (email != null && password != null && password.isNotEmpty) {
+            await _imapService.connectAndLogin(email, password);
+          }
+        }
+
         // Fetch from IMAP
         if (_imapService.isConnected) {
           final folders = await _imapService.listFolders();
@@ -164,15 +173,26 @@ class MailProvider extends ChangeNotifier {
     try {
       if (_authProvider.currentUser?.isDemo == true) {
         // Demo emails already in memory
-      } else if (_imapService.isConnected) {
-        final fetched = await _imapService.fetchMessages(
-          folderPath: _currentFolder.path,
-          count: 30,
-        );
-        if (fetched.isNotEmpty) {
-          _emails = fetched;
-          final currentUserEmail = _authProvider.currentUser?.email;
-          await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
+      } else {
+        // Auto-reconnect IMAP if disconnected
+        if (!_imapService.isConnected) {
+          final email = _authProvider.currentUser?.email;
+          final password = _authProvider.currentUser?.password;
+          if (email != null && password != null && password.isNotEmpty) {
+            await _imapService.connectAndLogin(email, password);
+          }
+        }
+
+        if (_imapService.isConnected) {
+          final fetched = await _imapService.fetchMessages(
+            folderPath: _currentFolder.path,
+            count: 30,
+          );
+          if (fetched.isNotEmpty) {
+            _emails = fetched;
+            final currentUserEmail = _authProvider.currentUser?.email;
+            await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
+          }
         }
       }
       _updateFolderCounts();
