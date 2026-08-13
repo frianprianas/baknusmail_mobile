@@ -1,0 +1,401 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/utils/format_helper.dart';
+import '../../data/models/email_message.dart';
+import '../../data/models/attachment_item.dart';
+import '../../providers/mail_provider.dart';
+import '../widgets/user_avatar.dart';
+
+class EmailDetailScreen extends StatelessWidget {
+  const EmailDetailScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is! EmailMessage) {
+      return const Scaffold(
+        body: Center(child: Text('Email tidak ditemukan')),
+      );
+    }
+    final email = args;
+    final mail = context.watch<MailProvider>();
+
+    final currentEmail = mail.filteredEmails.firstWhere(
+      (e) => e.messageId == email.messageId,
+      orElse: () => email,
+    );
+
+    final senderName = currentEmail.from.name.isNotEmpty
+        ? currentEmail.from.name
+        : FormatHelper.extractNameFromEmail(currentEmail.from.email);
+
+    return Scaffold(
+      appBar: AppBar(
+        actions: [
+          IconButton(
+            icon: Icon(
+              currentEmail.isStarred
+                  ? Icons.star_rounded
+                  : Icons.star_outline_rounded,
+              color: currentEmail.isStarred ? AppColors.gold : null,
+            ),
+            tooltip: currentEmail.isStarred ? 'Hapus Bintang' : 'Beri Bintang',
+            onPressed: () => mail.toggleStar(currentEmail),
+          ),
+          IconButton(
+            icon: const Icon(Icons.reply_rounded),
+            tooltip: 'Balas',
+            onPressed: () {
+              Navigator.pushNamed(
+                context,
+                '/compose',
+                arguments: {
+                  'replyTo': currentEmail,
+                  'type': 'reply',
+                },
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded),
+            tooltip: 'Hapus',
+            onPressed: () {
+              mail.deleteEmail(currentEmail);
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Pesan dipindahkan ke Sampah'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Subject
+            Text(
+              currentEmail.subject,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark
+                    ? AppColors.darkTextPrimary
+                    : AppColors.lightTextPrimary,
+                height: 1.3,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Sender & Info Card
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? AppColors.darkSurfaceElevated
+                    : AppColors.lightSurfaceElevated,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  UserAvatar(
+                    email: currentEmail.from.email,
+                    name: senderName,
+                    radius: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                senderName,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14.5,
+                                  color: isDark
+                                      ? AppColors.darkTextPrimary
+                                      : AppColors.lightTextPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          currentEmail.from.email,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark
+                                ? AppColors.darkTextMuted
+                                : AppColors.lightTextMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Text(
+                              'Kepada: ',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: isDark
+                                    ? AppColors.darkTextMuted
+                                    : AppColors.lightTextMuted,
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                currentEmail.to.map((t) => t.displayName).join(', '),
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: isDark
+                                      ? AppColors.darkTextSecondary
+                                      : AppColors.lightTextSecondary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          FormatHelper.formatFullDateTime(currentEmail.dateTime),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark
+                                ? AppColors.darkTextMuted
+                                : AppColors.lightTextMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Email Body
+            if (currentEmail.bodyHtml != null && currentEmail.bodyHtml!.isNotEmpty)
+              HtmlWidget(
+                currentEmail.bodyHtml!,
+                textStyle: TextStyle(
+                  fontSize: 14.5,
+                  height: 1.6,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              )
+            else
+              SelectableText(
+                currentEmail.bodyText,
+                style: TextStyle(
+                  fontSize: 14.5,
+                  height: 1.6,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              ),
+
+            // Attachments Section
+            if (currentEmail.hasAttachments && currentEmail.attachments.isNotEmpty) ...[
+              const SizedBox(height: 28),
+              const Divider(),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Icon(Icons.attach_file_rounded, size: 18),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Lampiran (${currentEmail.attachments.length})',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: currentEmail.attachments
+                    .map((att) => _buildAttachmentCard(context, att, isDark))
+                    .toList(),
+              ),
+            ],
+
+            const SizedBox(height: 36),
+
+            // Bottom Reply / Forward Bar
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.reply_rounded, size: 18),
+                    label: const Text('Balas'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.pushNamed(
+                        context,
+                        '/compose',
+                        arguments: {
+                          'replyTo': currentEmail,
+                          'type': 'reply',
+                        },
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.reply_all_rounded, size: 18),
+                    label: const Text('Balas Semua'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.pushNamed(
+                        context,
+                        '/compose',
+                        arguments: {
+                          'replyTo': currentEmail,
+                          'type': 'reply_all',
+                        },
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.forward_rounded, size: 18),
+                    label: const Text('Teruskan'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.pushNamed(
+                        context,
+                        '/compose',
+                        arguments: {
+                          'replyTo': currentEmail,
+                          'type': 'forward',
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAttachmentCard(
+      BuildContext context, AttachmentItem att, bool isDark) {
+    IconData icon = Icons.insert_drive_file_rounded;
+    Color iconColor = AppColors.primary;
+
+    if (att.isPdf) {
+      icon = Icons.picture_as_pdf_rounded;
+      iconColor = Colors.redAccent;
+    } else if (att.isImage) {
+      icon = Icons.image_rounded;
+      iconColor = Colors.teal;
+    } else if (att.isDocument) {
+      icon = Icons.description_rounded;
+      iconColor = Colors.blue;
+    }
+
+    return InkWell(
+      onTap: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Mengunduh lampiran: ${att.fileName}'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        constraints: const BoxConstraints(maxWidth: 220),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkSurfaceElevated : AppColors.lightSurfaceElevated,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: iconColor, size: 24),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    att.fileName,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    FormatHelper.formatFileSize(att.sizeInBytes),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark
+                          ? AppColors.darkTextMuted
+                          : AppColors.lightTextMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.download_rounded, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}

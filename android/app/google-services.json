@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "559822272504",
+    "project_id": "baknusmail",
+    "storage_bucket": "baknusmail.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:559822272504:android:155d07e4707d893ebb480d",
+        "android_client_info": {
+          "package_name": "id.sch.baktinusantara666.baknusmail"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQ6JQiH-dtwrY3kL9VMFS21JaM3Kj9vic"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,354 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../core/theme/app_colors.dart';
+import '../../data/models/baknus_service_models.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/baknus_provider.dart';
+
+class BaknusAttendScreen extends StatelessWidget {
+  const BaknusAttendScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final auth = context.watch<AuthProvider>();
+    final baknus = context.watch<BaknusProvider>();
+    final user = auth.currentUser;
+    final attend = baknus.attendData;
+
+    final name = attend?.name.isNotEmpty == true
+        ? attend!.name
+        : (user?.displayName ?? 'Pengguna');
+    final email = attend?.email.isNotEmpty == true
+        ? attend!.email
+        : (user?.email ?? '');
+    final role = attend?.role.isNotEmpty == true ? attend!.role : 'Siswa';
+    final totalHadir = attend?.totalKehadiranBulanIni ?? 0;
+    final details = attend?.detailKehadiran ?? [];
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('BaknusAttend'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Segarkan',
+            onPressed: () {
+              if (email.isNotEmpty) {
+                baknus.loadAllStats(email);
+              }
+            },
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          if (email.isNotEmpty) {
+            await baknus.loadAllStats(email);
+          }
+        },
+        child: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          children: [
+            // Header Profil (Nama, Email, Role)
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF059669), Color(0xFF10B981)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          'Presensi • $role',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.fingerprint_rounded,
+                        color: Colors.white,
+                        size: 26,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 19,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    email,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 12.5,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Ringkasan & Progress Bar: Jumlah Kehadiran Bulan Ini
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurface : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Jumlah Kehadiran Bulan Ini',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '$totalHadir Hari',
+                          style: const TextStyle(
+                            color: Color(0xFF10B981),
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: totalHadir > 0 ? (totalHadir / 24).clamp(0.0, 1.0) : 0.0,
+                      minHeight: 8,
+                      backgroundColor: isDark ? Colors.white12 : Colors.black12,
+                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10B981)),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$totalHadir dari estimasi 24 hari kerja/sekolah bulan ini',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Daftar Riwayat Presensi Terbaru (detail_kehadiran)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Daftar Riwayat Presensi',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  '${details.length} Catatan',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark
+                        ? AppColors.darkTextMuted
+                        : AppColors.lightTextMuted,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            if (details.isEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+                alignment: Alignment.center,
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.event_busy_rounded,
+                      size: 44,
+                      color: isDark
+                          ? AppColors.darkTextMuted
+                          : AppColors.lightTextMuted,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Belum ada catatan riwayat presensi.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark
+                            ? AppColors.darkTextSecondary
+                            : AppColors.lightTextSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...details.map((d) => _buildDetailItem(d, isDark)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailItem(DetailKehadiran d, bool isDark) {
+    final isTerlambat = d.status.toLowerCase().contains('terlambat');
+    final isDinas = d.isDinasLuar || d.status.toLowerCase().contains('dinas');
+
+    Color statusColor = const Color(0xFF10B981);
+    if (isTerlambat) statusColor = const Color(0xFFF59E0B);
+    if (isDinas) statusColor = const Color(0xFF3B82F6);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.access_time_filled_rounded,
+                      size: 16, color: statusColor),
+                  const SizedBox(width: 8),
+                  Text(
+                    d.waktuTap,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  d.status,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (d.keterangan.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              d.keterangan,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark
+                    ? AppColors.darkTextSecondary
+                    : AppColors.lightTextSecondary,
+              ),
+            ),
+          ],
+          if (d.lokasiDinasLuar != null && d.lokasiDinasLuar!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF3B82F6)),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Lokasi: ${d.lokasiDinasLuar}',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: Color(0xFF3B82F6),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (d.lat != null && d.long != null && d.lat!.isNotEmpty && d.long!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.pin_drop_outlined, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text(
+                  'Koordinat: ${d.lat}, ${d.long}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
