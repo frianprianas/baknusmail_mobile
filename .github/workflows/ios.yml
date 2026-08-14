@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-ios:
+  build-ios-simulator:
     runs-on: macos-latest
 
     steps:
@@ -28,16 +28,16 @@ jobs:
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build iOS App (No Codesign)
-        run: flutter build ios --release --no-codesign
+      - name: Build iOS Simulator App for Appetize.io
+        run: flutter build ios --simulator --no-codesign
 
-      - name: Compress Runner.app into ZIP for Appetize.io / Simulator
+      - name: Compress iphonesimulator Runner.app into ZIP for Appetize.io
         run: |
-          cd build/ios/iphoneos
+          cd build/ios/iphonesimulator
           zip -r Runner.app.zip Runner.app
 
-      - name: Upload iOS Build Artifact
+      - name: Upload iOS Simulator Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build-runner-app
-          path: build/ios/iphoneos/Runner.app.zip
+          name: ios-simulator-runner-app
+          path: build/ios/iphonesimulator/Runner.app.zip
