@@ -10,13 +10,12 @@ workflows:
       - name: Get Flutter packages
         script: |
           flutter pub get
-      - name: Build x86_64 iOS Simulator App
+      - name: Build iOS Simulator App via xcodebuild
         script: |
-          flutter build ios --simulator --no-codesign
-          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -sdk iphonesimulator -arch x86_64 ONLY_ACTIVE_ARCH=NO build
-      - name: Zip Simulator App
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -sdk iphonesimulator -configuration Debug -derivedDataPath build
+      - name: Zip Debug-iphonesimulator Runner.app
         script: |
-          cd build/ios/iphonesimulator
+          cd build/Build/Products/Debug-iphonesimulator
           zip -r Runner.app.zip Runner.app
     artifacts:
-      - build/ios/iphonesimulator/Runner.app.zip
+      - build/Build/Products/Debug-iphonesimulator/Runner.app.zip

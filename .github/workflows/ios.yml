@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-ios-x86-simulator:
-    runs-on: macos-13 # macos-13 uses Intel x86_64 runner compatible with Appetize.io
+  build-ios-simulator:
+    runs-on: macos-latest
 
     steps:
       - name: Checkout Repository
@@ -28,18 +28,17 @@ jobs:
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build x86_64 iOS Simulator App
+      - name: Build iOS Simulator App via xcodebuild (Appetize.io Official Specs)
         run: |
-          flutter build ios --simulator --no-codesign
-          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -sdk iphonesimulator -arch x86_64 ONLY_ACTIVE_ARCH=NO build
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -sdk iphonesimulator -configuration Debug -derivedDataPath build
 
-      - name: Compress x86_64 Runner.app into ZIP for Appetize.io
+      - name: Compress Debug-iphonesimulator Runner.app into ZIP
         run: |
-          cd build/ios/iphonesimulator
+          cd build/Build/Products/Debug-iphonesimulator
           zip -r Runner.app.zip Runner.app
 
       - name: Upload iOS Simulator Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ios-simulator-runner-app
-          path: build/ios/iphonesimulator/Runner.app.zip
+          path: build/Build/Products/Debug-iphonesimulator/Runner.app.zip
