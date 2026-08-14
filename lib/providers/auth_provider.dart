@@ -35,8 +35,11 @@ class AuthProvider extends ChangeNotifier {
       _status = AuthStatus.authenticated;
       notifyListeners();
       _fetchUserQuota();
-      // Register token again on app start to ensure it's up to date
+      // Register token and initialize IMAP credentials on app start
       if (!savedUser.isDemo) {
+        if (savedUser.email.isNotEmpty && savedUser.password != null && savedUser.password!.isNotEmpty) {
+          _imapService.ensureConnected(savedUser.email, savedUser.password!);
+        }
         _fcmService.registerToken(savedUser.email);
       }
     } else {

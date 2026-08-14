@@ -42,15 +42,23 @@ class FolderDrawer extends StatelessWidget {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(8),
+                        width: 36,
+                        height: 36,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
                           shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 4,
+                            ),
+                          ],
                         ),
-                        child: const Icon(
-                          Icons.mark_email_read_rounded,
-                          color: Colors.white,
-                          size: 26,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Image.asset(
+                            'assets/images/app_logo.png',
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -135,80 +143,118 @@ class FolderDrawer extends StatelessWidget {
 
             const Divider(height: 1),
 
-            // Folder List
+            // Folder List & Navigation
             Expanded(
-              child: ListView.builder(
+              child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: mail.folders.length,
-                itemBuilder: (context, index) {
-                  final folder = mail.folders[index];
-                  final isSelected = mail.currentFolder.path == folder.path;
-
-                  return ListTile(
+                children: [
+                  // Navigasi ke Dashboard Utama (Portal BaknusID)
+                  ListTile(
                     dense: true,
-                    selected: isSelected,
-                    selectedTileColor: isDark
-                        ? AppColors.primaryLight.withValues(alpha: 0.15)
-                        : AppColors.primary.withValues(alpha: 0.08),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                    leading: Icon(
-                      folder.icon,
-                      color: isSelected
-                          ? AppColors.primaryLight
-                          : (isDark
-                              ? AppColors.darkTextSecondary
-                              : AppColors.lightTextSecondary),
+                    leading: const Icon(
+                      Icons.grid_view_rounded,
+                      color: AppColors.primary,
                       size: 22,
                     ),
-                    title: Text(
-                      folder.name,
+                    title: const Text(
+                      'Dashboard Utama',
                       style: TextStyle(
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.w500,
+                        fontWeight: FontWeight.bold,
                         fontSize: 14,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Portal Layanan BaknusID',
+                      style: TextStyle(fontSize: 11),
+                    ),
+                    trailing: const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 12,
+                      color: AppColors.primary,
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushReplacementNamed(context, '/portal');
+                    },
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Divider(height: 1),
+                  ),
+
+                  // Folder list
+                  ...mail.folders.map((folder) {
+                    final isSelected = mail.currentFolder.path == folder.path;
+
+                    return ListTile(
+                      dense: true,
+                      selected: isSelected,
+                      selectedTileColor: isDark
+                          ? AppColors.primaryLight.withValues(alpha: 0.15)
+                          : AppColors.primary.withValues(alpha: 0.08),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 2),
+                      leading: Icon(
+                        folder.icon,
                         color: isSelected
                             ? AppColors.primaryLight
                             : (isDark
-                                ? AppColors.darkTextPrimary
-                                : AppColors.lightTextPrimary),
+                                ? AppColors.darkTextSecondary
+                                : AppColors.lightTextSecondary),
+                        size: 22,
                       ),
-                    ),
-                    trailing: folder.unreadCount > 0
-                        ? Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? AppColors.primary
-                                  : (isDark
-                                      ? AppColors.darkSurfaceElevated
-                                      : AppColors.lightSurfaceElevated),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${folder.unreadCount}',
-                              style: TextStyle(
+                      title: Text(
+                        folder.name,
+                        style: TextStyle(
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.w500,
+                          fontSize: 14,
+                          color: isSelected
+                              ? AppColors.primaryLight
+                              : (isDark
+                                  ? AppColors.darkTextPrimary
+                                  : AppColors.lightTextPrimary),
+                        ),
+                      ),
+                      trailing: folder.unreadCount > 0
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
                                 color: isSelected
-                                    ? Colors.white
+                                    ? AppColors.primary
                                     : (isDark
-                                        ? AppColors.darkTextSecondary
-                                        : AppColors.lightTextSecondary),
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.bold,
+                                        ? AppColors.darkSurfaceElevated
+                                        : AppColors.lightSurfaceElevated),
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                            ),
-                          )
-                        : null,
-                    onTap: () {
-                      Navigator.pop(context);
-                      mail.selectFolder(folder);
-                    },
-                  );
-                },
+                              child: Text(
+                                '${folder.unreadCount}',
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Colors.white
+                                      : (isDark
+                                          ? AppColors.darkTextSecondary
+                                          : AppColors.lightTextSecondary),
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            )
+                          : null,
+                      onTap: () {
+                        Navigator.pop(context);
+                        mail.selectFolder(folder);
+                      },
+                    );
+                  }),
+                ],
               ),
             ),
 

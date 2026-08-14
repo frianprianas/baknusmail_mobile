@@ -5,6 +5,8 @@ import '../../data/models/baknus_service_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/baknus_provider.dart';
 
+import '../widgets/app_background.dart';
+
 class BaknusDriveScreen extends StatelessWidget {
   const BaknusDriveScreen({super.key});
 
@@ -39,8 +41,12 @@ class BaknusDriveScreen extends StatelessWidget {
     final percentageFormatted = storage.percentString;
     final lastAccessed = drive?.lastAccessed ?? '-';
 
-    return Scaffold(
-      appBar: AppBar(
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
         title: const Text('BaknusDrive'),
         actions: [
           IconButton(
@@ -273,8 +279,9 @@ class BaknusDriveScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildStorageRow(String label, String value, bool isDark) {
     return Row(

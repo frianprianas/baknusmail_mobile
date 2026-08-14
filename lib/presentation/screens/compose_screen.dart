@@ -12,6 +12,8 @@ import '../../providers/mail_provider.dart';
 import '../../providers/mailcow_provider.dart';
 import '../widgets/user_avatar.dart';
 
+import '../widgets/app_background.dart';
+
 class ComposeScreen extends StatefulWidget {
   const ComposeScreen({super.key});
 
@@ -238,12 +240,12 @@ class _ComposeScreenState extends State<ComposeScreen> {
     final auth = context.watch<AuthProvider>();
     final currentUser = auth.currentUser;
 
-    return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: Colors.transparent,
         title: const Text(
           'Tulis Pesan',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
@@ -915,8 +917,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildFormatBtn({
     required IconData icon,

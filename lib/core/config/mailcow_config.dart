@@ -1,5 +1,5 @@
 class MailcowConfig {
-  static const String appName = 'BaknusMail';
+  static const String appName = 'BaknusID';
   static const String schoolName = 'SMK Bakti Nusantara 666';
   
   // Mailcow API & Auth Settings

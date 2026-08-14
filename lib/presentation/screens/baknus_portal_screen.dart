@@ -8,6 +8,8 @@ import '../../providers/baknus_provider.dart';
 import '../../providers/mail_provider.dart';
 import '../widgets/user_avatar.dart';
 
+import '../widgets/app_background.dart';
+
 class BaknusPortalScreen extends StatefulWidget {
   const BaknusPortalScreen({super.key});
 
@@ -60,50 +62,57 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
 
     final userRole = baknus.userRole;
 
-    return Scaffold(
-      backgroundColor:
-          isDark ? AppColors.darkBackground : AppColors.lightBackground,
-      appBar: AppBar(
+    return AppBackground(
+      child: Scaffold(
         backgroundColor: Colors.transparent,
-        elevation: 0,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(7),
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.primary, AppColors.accent],
-                ),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(
-                Icons.school_rounded,
-                color: Colors.white,
-                size: 20,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/images/app_logo.png',
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
             const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Dashboard BaknusID',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.3,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Dashboard BaknusID',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.3,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                Text(
-                  MailcowConfig.schoolName,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isDark
-                        ? AppColors.darkTextMuted
-                        : AppColors.lightTextMuted,
+                  Text(
+                    MailcowConfig.schoolName,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark
+                          ? AppColors.darkTextMuted
+                          : AppColors.lightTextMuted,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -385,8 +394,9 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildSectionHeader(String title, bool isDark) {
     return Padding(

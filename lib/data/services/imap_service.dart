@@ -9,12 +9,16 @@ import '../models/folder_info.dart';
 class ImapService {
   ImapClient? _client;
   bool _isConnected = false;
+  String? _savedEmail;
+  String? _savedPassword;
 
   bool get isConnected => _isConnected && (_client?.isLoggedIn ?? false);
 
   // Connect and login to IMAP server
   Future<bool> connectAndLogin(String email, String password) async {
     if (kIsWeb) return false;
+    _savedEmail = email;
+    _savedPassword = password;
     try {
       await disconnect();
 
@@ -34,6 +38,18 @@ class ImapService {
     }
   }
 
+  // Ensure IMAP is connected, auto-reconnecting if socket dropped
+  Future<bool> ensureConnected([String? email, String? password]) async {
+    if (email != null && email.isNotEmpty) _savedEmail = email;
+    if (password != null && password.isNotEmpty) _savedPassword = password;
+
+    if (isConnected) return true;
+    if (_savedEmail != null && _savedPassword != null && _savedPassword!.isNotEmpty) {
+      return await connectAndLogin(_savedEmail!, _savedPassword!);
+    }
+    return false;
+  }
+
   // Disconnect from IMAP server
   Future<void> disconnect() async {
     try {
@@ -50,7 +66,7 @@ class ImapService {
 
   // List all mailbox folders
   Future<List<FolderInfo>> listFolders() async {
-    if (!isConnected) return FolderInfo.getDefaultFolders();
+    if (!await ensureConnected()) return FolderInfo.getDefaultFolders();
 
     try {
       final mailboxes = await _client!.listMailboxes();
@@ -110,32 +126,45 @@ class ImapService {
           ));
         }
 
-        // Sort by Gmail priority order (Inbox at top, then Starred, Sent, Drafts, Archive, Spam, Trash)
+        // Sort by Gmail priority order
         folders.sort((a, b) => a.priority.compareTo(b.priority));
 
         if (folders.isNotEmpty) return folders;
       }
-    } catch (_) {}
+    } catch (_) {
+      _isConnected = false;
+    }
 
     return FolderInfo.getDefaultFolders();
   }
 
-  // Fetch messages in selected folder
+  // Fetch messages in selected folder (with pagination)
   Future<List<EmailMessage>> fetchMessages({
     String folderPath = 'INBOX',
     int count = 30,
+    int offset = 0,
   }) async {
-    if (!isConnected) return [];
+    if (!await ensureConnected()) return [];
 
     try {
       final mailbox = await _client!.selectMailboxByPath(folderPath);
+      try {
+        await _client!.noop(); // Force server to report newly arrived messages
+      } catch (_) {}
+
       final totalMessages = mailbox.messagesExists;
       if (totalMessages == 0) return [];
 
-      final fetchCount = count > totalMessages ? totalMessages : count;
-      final fetchResult = await _client!.fetchRecentMessages(
-        messageCount: fetchCount,
-        criteria: 'BODY.PEEK[]',
+      int endId = totalMessages - offset;
+      if (endId <= 0) return []; // No more messages to fetch
+
+      int startId = endId - count + 1;
+      if (startId <= 0) startId = 1;
+
+      final sequence = MessageSequence()..addRange(startId, endId);
+      final fetchResult = await _client!.fetchMessages(
+        sequence,
+        '(FLAGS UID BODY.PEEK[])',
       );
 
       final messages = <EmailMessage>[];
@@ -144,18 +173,61 @@ class ImapService {
         messages.add(email);
       }
 
-      // Sort latest first
-      messages.sort((a, b) => b.dateTime.compareTo(a.dateTime));
+      // Sort latest first (by date and sequence ID)
+      messages.sort((a, b) {
+        final dateCmp = b.dateTime.compareTo(a.dateTime);
+        if (dateCmp != 0) return dateCmp;
+        return (b.sequenceId ?? 0).compareTo(a.sequenceId ?? 0);
+      });
       return messages;
     } catch (e) {
+      debugPrint('IMAP fetch error: $e. Reconnecting...');
+      _isConnected = false;
+      if (await ensureConnected()) {
+        try {
+          final mailbox = await _client!.selectMailboxByPath(folderPath);
+          try {
+            await _client!.noop();
+          } catch (_) {}
+
+          final totalMessages = mailbox.messagesExists;
+          if (totalMessages == 0) return [];
+
+          int endId = totalMessages - offset;
+          if (endId <= 0) return []; // No more messages to fetch
+
+          int startId = endId - count + 1;
+          if (startId <= 0) startId = 1;
+
+          final sequence = MessageSequence()..addRange(startId, endId);
+          final fetchResult = await _client!.fetchMessages(
+            sequence,
+            '(FLAGS UID BODY.PEEK[])',
+          );
+
+          final messages = <EmailMessage>[];
+          for (final mimeMsg in fetchResult.messages) {
+            final email = _convertMimeToEmailMessage(mimeMsg, folderPath);
+            messages.add(email);
+          }
+
+          messages.sort((a, b) {
+            final dateCmp = b.dateTime.compareTo(a.dateTime);
+            if (dateCmp != 0) return dateCmp;
+            return (b.sequenceId ?? 0).compareTo(a.sequenceId ?? 0);
+          });
+          return messages;
+        } catch (_) {}
+      }
       return [];
     }
   }
 
   // Mark message as read/unread
-  Future<bool> markAsRead(int sequenceId, {bool isRead = true}) async {
+  Future<bool> markAsRead(int sequenceId, {bool isRead = true, String folderPath = 'INBOX'}) async {
     if (!isConnected) return false;
     try {
+      await _client!.selectMailboxByPath(folderPath);
       final sequence = MessageSequence()..add(sequenceId);
       final flag = MessageFlags.seen;
       if (isRead) {
@@ -169,10 +241,29 @@ class ImapService {
     }
   }
 
-  // Flag/Star message
-  Future<bool> toggleStarred(int sequenceId, {required bool isStarred}) async {
+  // Mark message as read/unread using UID
+  Future<bool> markAsReadByUid(int uid, {bool isRead = true, String folderPath = 'INBOX'}) async {
     if (!isConnected) return false;
     try {
+      await _client!.selectMailboxByPath(folderPath);
+      final sequence = MessageSequence()..add(uid);
+      final flag = MessageFlags.seen;
+      if (isRead) {
+        await _client!.uidStore(sequence, [flag], action: StoreAction.add);
+      } else {
+        await _client!.uidStore(sequence, [flag], action: StoreAction.remove);
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Flag/Star message
+  Future<bool> toggleStarred(int sequenceId, {required bool isStarred, String folderPath = 'INBOX'}) async {
+    if (!isConnected) return false;
+    try {
+      await _client!.selectMailboxByPath(folderPath);
       final sequence = MessageSequence()..add(sequenceId);
       final flag = MessageFlags.flagged;
       if (isStarred) {
@@ -186,12 +277,45 @@ class ImapService {
     }
   }
 
-  // Delete message (Move to Trash or flag deleted)
-  Future<bool> deleteMessage(int sequenceId) async {
+  // Flag/Star message using UID
+  Future<bool> toggleStarredByUid(int uid, {required bool isStarred, String folderPath = 'INBOX'}) async {
     if (!isConnected) return false;
     try {
+      await _client!.selectMailboxByPath(folderPath);
+      final sequence = MessageSequence()..add(uid);
+      final flag = MessageFlags.flagged;
+      if (isStarred) {
+        await _client!.uidStore(sequence, [flag], action: StoreAction.add);
+      } else {
+        await _client!.uidStore(sequence, [flag], action: StoreAction.remove);
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Delete message (Move to Trash or flag deleted)
+  Future<bool> deleteMessage(int sequenceId, {String folderPath = 'INBOX'}) async {
+    if (!isConnected) return false;
+    try {
+      await _client!.selectMailboxByPath(folderPath);
       final sequence = MessageSequence()..add(sequenceId);
       await _client!.store(sequence, [MessageFlags.deleted], action: StoreAction.add);
+      await _client!.expunge();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Delete message using UID
+  Future<bool> deleteMessageByUid(int uid, {String folderPath = 'INBOX'}) async {
+    if (!isConnected) return false;
+    try {
+      await _client!.selectMailboxByPath(folderPath);
+      final sequence = MessageSequence()..add(uid);
+      await _client!.uidStore(sequence, [MessageFlags.deleted], action: StoreAction.add);
       await _client!.expunge();
       return true;
     } catch (_) {
@@ -258,24 +382,64 @@ class ImapService {
     MimePart? htmlPart;
     MimePart? plainPart;
 
-    if (msg.parts != null) {
-      for (final p in msg.parts!) {
+    void findParts(List<MimePart> parts) {
+      for (final p in parts) {
         final mime = p.mediaType.text.toLowerCase();
-        if (mime.contains('html')) {
+        if (mime.contains('html') && htmlPart == null) {
           htmlPart = p;
-        } else if (mime.contains('plain')) {
+        } else if (mime.contains('plain') && plainPart == null) {
           plainPart = p;
+        }
+        if (p.parts != null && p.parts!.isNotEmpty) {
+          findParts(p.parts!);
         }
       }
     }
 
-    final bodyHtml = htmlPart?.decodeContentText();
-    final bodyPlain = plainPart?.decodeContentText() ?? msg.decodeContentText() ?? '';
-    final snippet = bodyPlain.isNotEmpty
+    if (msg.parts != null && msg.parts!.isNotEmpty) {
+      findParts(msg.parts!);
+    }
+
+    final rawBodyHtml = htmlPart?.decodeContentText();
+    final rawBodyPlain = plainPart?.decodeContentText() ?? msg.decodeContentText() ?? '';
+
+    // Strip HTML tags and common HTML entities for a clean plain-text snippet
+    String stripHtml(String html) {
+      return html
+          .replaceAll(RegExp(r'<style[^>]*>.*?</style>', caseSensitive: false, dotAll: true), ' ')
+          .replaceAll(RegExp(r'<script[^>]*>.*?</script>', caseSensitive: false, dotAll: true), ' ')
+          .replaceAll(RegExp(r'<[^>]+>'), ' ')
+          .replaceAll('&nbsp;', ' ')
+          .replaceAll('&amp;', '&')
+          .replaceAll('&lt;', '<')
+          .replaceAll('&gt;', '>')
+          .replaceAll('&quot;', '"')
+          .replaceAll('&#39;', "'")
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+
+    // Detect if the "plain" body is actually HTML (e.g. email sent as text/plain but body is HTML)
+    bool isHtmlContent(String text) {
+      final t = text.trim().toLowerCase();
+      if (t.startsWith('<!doctype html') || t.startsWith('<html')) return true;
+      const htmlTags = ['<div', '<table', '<span', '<p ', '<p>', '<h1', '<h2', '<h3', '<ul', '<ol'];
+      for (final tag in htmlTags) {
+        if (t.startsWith(tag)) return true;
+      }
+      final preview = t.length > 200 ? t.substring(0, 200) : t;
+      return RegExp(r'<(div|table|span|p|h[1-6]|body)\s[^>]*style=').hasMatch(preview);
+    }
+
+    // If bodyPlain looks like HTML, promote it to bodyHtml
+    final String? bodyHtml =
+        rawBodyHtml ?? (isHtmlContent(rawBodyPlain) ? rawBodyPlain : null);
+    final String bodyPlain =
+        isHtmlContent(rawBodyPlain) ? stripHtml(rawBodyPlain) : rawBodyPlain;
+
+    final snippet = bodyPlain.trim().isNotEmpty
         ? bodyPlain.replaceAll(RegExp(r'\s+'), ' ').trim()
-        : (bodyHtml != null
-            ? bodyHtml.replaceAll(RegExp(r'<[^>]*>'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim()
-            : '');
+        : (bodyHtml != null ? stripHtml(bodyHtml) : '');
 
     // Attachments
     final attachments = <AttachmentItem>[];
@@ -307,7 +471,7 @@ class ImapService {
 
     return EmailMessage(
       sequenceId: msg.sequenceId,
-      messageId: msg.sequenceId?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      messageId: msg.uid?.toString() ?? msg.sequenceId?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
       from: fromItem,
       to: toList.isNotEmpty
           ? toList

@@ -20,6 +20,7 @@ class MailProvider extends ChangeNotifier {
   FolderInfo _currentFolder = FolderInfo.getDefaultFolders().first;
   List<EmailMessage> _emails = [];
   bool _isLoading = false;
+  bool _isFetchingMore = false;
   String? _errorMessage;
 
   String _searchQuery = '';
@@ -38,7 +39,9 @@ class MailProvider extends ChangeNotifier {
 
   List<FolderInfo> get folders => _folders;
   FolderInfo get currentFolder => _currentFolder;
+  List<EmailMessage> get emails => _emails;
   bool get isLoading => _isLoading;
+  bool get isFetchingMore => _isFetchingMore;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
   MailFilter get activeFilter => _activeFilter;
@@ -124,32 +127,32 @@ class MailProvider extends ChangeNotifier {
         _updateFolderCounts();
       } else {
         final currentUserEmail = _authProvider.currentUser?.email;
+        final currentUserPassword = _authProvider.currentUser?.password;
+
         // Load cached first for this specific user
         final cached = _storageService.getCachedEmails(_currentFolder.path, userEmail: currentUserEmail);
         _emails = cached;
         _updateFolderCounts();
 
-        // Auto-reconnect IMAP if disconnected (e.g. after app restart or session timeout)
-        if (!_imapService.isConnected) {
-          final email = _authProvider.currentUser?.email;
-          final password = _authProvider.currentUser?.password;
-          if (email != null && password != null && password.isNotEmpty) {
-            await _imapService.connectAndLogin(email, password);
-          }
-        }
+        // Auto-reconnect IMAP if disconnected with saved credentials
+        final isConnected = await _imapService.ensureConnected(currentUserEmail, currentUserPassword);
 
         // Fetch from IMAP
-        if (_imapService.isConnected) {
+        if (isConnected || _imapService.isConnected) {
           final folders = await _imapService.listFolders();
           if (folders.isNotEmpty) {
             _folders = folders;
           }
+          final targetPath = _currentFolder.type == FolderType.starred ? 'INBOX' : _currentFolder.path;
           final fetched = await _imapService.fetchMessages(
-            folderPath: _currentFolder.path,
+            folderPath: targetPath,
             count: 30,
           );
-          _emails = fetched;
+          if (fetched.isNotEmpty || cached.isEmpty) {
+            _emails = fetched;
+          }
           await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
+          _updateFolderCounts();
         } else {
           // If not connected and no cache, clear emails
           if (cached.isEmpty) {
@@ -174,25 +177,19 @@ class MailProvider extends ChangeNotifier {
       if (_authProvider.currentUser?.isDemo == true) {
         // Demo emails already in memory
       } else {
-        // Auto-reconnect IMAP if disconnected
-        if (!_imapService.isConnected) {
-          final email = _authProvider.currentUser?.email;
-          final password = _authProvider.currentUser?.password;
-          if (email != null && password != null && password.isNotEmpty) {
-            await _imapService.connectAndLogin(email, password);
-          }
-        }
-
-        if (_imapService.isConnected) {
+        final email = _authProvider.currentUser?.email;
+        final password = _authProvider.currentUser?.password;
+        if (await _imapService.ensureConnected(email, password)) {
+          final targetPath = _currentFolder.type == FolderType.starred ? 'INBOX' : _currentFolder.path;
           final fetched = await _imapService.fetchMessages(
-            folderPath: _currentFolder.path,
+            folderPath: targetPath,
             count: 30,
+            offset: 0,
           );
-          if (fetched.isNotEmpty) {
+          if (fetched.isNotEmpty || _emails.isEmpty) {
             _emails = fetched;
-            final currentUserEmail = _authProvider.currentUser?.email;
-            await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
           }
+          await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: email);
         }
       }
       _updateFolderCounts();
@@ -204,18 +201,76 @@ class MailProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> fetchMoreEmails() async {
+    if (_isFetchingMore || _isLoading || _authProvider.currentUser?.isDemo == true) return;
+    
+    // Check if we already loaded all messages based on folder count
+    if (_emails.length >= _currentFolder.totalCount) return;
+
+    _isFetchingMore = true;
+    notifyListeners();
+
+    try {
+      final email = _authProvider.currentUser?.email;
+      final password = _authProvider.currentUser?.password;
+      if (await _imapService.ensureConnected(email, password)) {
+        final targetPath = _currentFolder.type == FolderType.starred ? 'INBOX' : _currentFolder.path;
+        final fetched = await _imapService.fetchMessages(
+          folderPath: targetPath,
+          count: 30,
+          offset: _emails.length,
+        );
+        if (fetched.isNotEmpty) {
+          // Avoid duplicates by merging based on messageId
+          for (var newEmail in fetched) {
+            if (!_emails.any((e) => e.messageId == newEmail.messageId)) {
+              _emails.add(newEmail);
+            }
+          }
+          await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: email);
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to fetch more emails: $e');
+    } finally {
+      _isFetchingMore = false;
+      notifyListeners();
+    }
+  }
+
+  void addOrUpdateEmail(EmailMessage email) {
+    final index = _emails.indexWhere((e) => e.messageId == email.messageId);
+    if (index != -1) {
+      _emails[index] = email;
+    } else {
+      _emails.insert(0, email);
+    }
+    _updateFolderCounts();
+    final currentUserEmail = _authProvider.currentUser?.email;
+    _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
+    notifyListeners();
+  }
+
   Future<void> toggleStar(EmailMessage email) async {
     final index = _emails.indexWhere((e) => e.messageId == email.messageId);
     if (index != -1) {
       final updated = _emails[index].copyWith(isStarred: !email.isStarred);
       _emails[index] = updated;
+      
+      // Update cache immediately to persist the star status
+      final currentUserEmail = _authProvider.currentUser?.email;
+      await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
+      
       notifyListeners();
 
-      if (!_authProvider.currentUser!.isDemo && email.sequenceId != null) {
-        await _imapService.toggleStarred(
-          email.sequenceId!,
-          isStarred: updated.isStarred,
-        );
+      if (!_authProvider.currentUser!.isDemo) {
+        final uid = int.tryParse(email.messageId);
+        final targetFolder = email.folder.isNotEmpty ? email.folder : 'INBOX';
+        if (uid != null) {
+          await _imapService.toggleStarredByUid(uid, isStarred: updated.isStarred, folderPath: targetFolder);
+        } else if (email.sequenceId != null) {
+          await _imapService.toggleStarred(email.sequenceId!, isStarred: updated.isStarred, folderPath: targetFolder);
+        }
       }
     }
   }
@@ -226,10 +281,21 @@ class MailProvider extends ChangeNotifier {
       final updated = _emails[index].copyWith(isRead: isRead);
       _emails[index] = updated;
       _updateFolderCounts();
+      
+      // Update cache immediately
+      final currentUserEmail = _authProvider.currentUser?.email;
+      await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
+
       notifyListeners();
 
-      if (!_authProvider.currentUser!.isDemo && email.sequenceId != null) {
-        await _imapService.markAsRead(email.sequenceId!, isRead: isRead);
+      if (!_authProvider.currentUser!.isDemo) {
+        final uid = int.tryParse(email.messageId);
+        final targetFolder = email.folder.isNotEmpty ? email.folder : 'INBOX';
+        if (uid != null) {
+          await _imapService.markAsReadByUid(uid, isRead: isRead, folderPath: targetFolder);
+        } else if (email.sequenceId != null) {
+          await _imapService.markAsRead(email.sequenceId!, isRead: isRead, folderPath: targetFolder);
+        }
       }
     }
   }
@@ -243,10 +309,20 @@ class MailProvider extends ChangeNotifier {
         _emails[index] = _emails[index].copyWith(folder: 'Trash');
       }
       _updateFolderCounts();
+      
+      // Update cache immediately
+      final currentUserEmail = _authProvider.currentUser?.email;
+      await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
+
       notifyListeners();
 
-      if (!_authProvider.currentUser!.isDemo && email.sequenceId != null) {
-        await _imapService.deleteMessage(email.sequenceId!);
+      if (!_authProvider.currentUser!.isDemo) {
+        final uid = int.tryParse(email.messageId);
+        if (uid != null) {
+          await _imapService.deleteMessageByUid(uid);
+        } else if (email.sequenceId != null) {
+          await _imapService.deleteMessage(email.sequenceId!);
+        }
       }
     }
   }

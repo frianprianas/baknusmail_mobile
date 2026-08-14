@@ -6,6 +6,8 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/format_helper.dart';
 import '../../providers/mailcow_provider.dart';
 
+import '../widgets/app_background.dart';
+
 class ServerStatusScreen extends StatelessWidget {
   const ServerStatusScreen({super.key});
 
@@ -18,8 +20,12 @@ class ServerStatusScreen extends StatelessWidget {
     final domainInfo = mailcow.domainInfo;
     final health = mailcow.serverHealth;
 
-    return Scaffold(
-      appBar: AppBar(
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
         title: const Text('Status Server Mailcow'),
         actions: [
           IconButton(
@@ -230,8 +236,9 @@ class ServerStatusScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildServerDetailRow(String label, String value) {
     return Padding(

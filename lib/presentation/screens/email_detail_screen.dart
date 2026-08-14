@@ -8,6 +8,8 @@ import '../../data/models/attachment_item.dart';
 import '../../providers/mail_provider.dart';
 import '../widgets/user_avatar.dart';
 
+import '../widgets/app_background.dart';
+
 class EmailDetailScreen extends StatelessWidget {
   const EmailDetailScreen({super.key});
 
@@ -33,8 +35,12 @@ class EmailDetailScreen extends StatelessWidget {
         ? currentEmail.from.name
         : FormatHelper.extractNameFromEmail(currentEmail.from.email);
 
-    return Scaffold(
-      appBar: AppBar(
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
         actions: [
           IconButton(
             icon: Icon(
@@ -192,28 +198,39 @@ class EmailDetailScreen extends StatelessWidget {
             const SizedBox(height: 20),
 
             // Email Body
-            if (currentEmail.bodyHtml != null && currentEmail.bodyHtml!.isNotEmpty)
-              HtmlWidget(
-                currentEmail.bodyHtml!,
-                textStyle: TextStyle(
-                  fontSize: 14.5,
-                  height: 1.6,
-                  color: isDark
-                      ? AppColors.darkTextPrimary
-                      : AppColors.lightTextPrimary,
-                ),
-              )
-            else
-              SelectableText(
-                currentEmail.bodyText,
-                style: TextStyle(
-                  fontSize: 14.5,
-                  height: 1.6,
-                  color: isDark
-                      ? AppColors.darkTextPrimary
-                      : AppColors.lightTextPrimary,
-                ),
-              ),
+            Builder(builder: (context) {
+              // Determine what to render
+              final htmlToRender = currentEmail.bodyHtml != null &&
+                      currentEmail.bodyHtml!.isNotEmpty
+                  ? currentEmail.bodyHtml!
+                  : _looksLikeHtml(currentEmail.bodyText)
+                      ? currentEmail.bodyText
+                      : null;
+
+              if (htmlToRender != null) {
+                return HtmlWidget(
+                  htmlToRender,
+                  textStyle: TextStyle(
+                    fontSize: 14.5,
+                    height: 1.6,
+                    color: isDark
+                        ? AppColors.darkTextPrimary
+                        : AppColors.lightTextPrimary,
+                  ),
+                );
+              } else {
+                return SelectableText(
+                  currentEmail.bodyText,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    height: 1.6,
+                    color: isDark
+                        ? AppColors.darkTextPrimary
+                        : AppColors.lightTextPrimary,
+                  ),
+                );
+              }
+            }),
 
             // Attachments Section
             if (currentEmail.hasAttachments && currentEmail.attachments.isNotEmpty) ...[
@@ -322,7 +339,22 @@ class EmailDetailScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ),
+  );
+}
+
+  static bool _looksLikeHtml(String text) {
+    final t = text.trim().toLowerCase();
+    // Check common HTML document starters
+    if (t.startsWith('<!doctype html') || t.startsWith('<html')) return true;
+    // Check common HTML tag starters (email bodies often start directly with <div> or <table>)
+    const htmlTags = ['<div', '<table', '<span', '<p ', '<p>', '<h1', '<h2', '<h3', '<ul', '<ol'];
+    for (final tag in htmlTags) {
+      if (t.startsWith(tag)) return true;
+    }
+    // Fallback: detect inline-styled HTML elements anywhere in the first 200 chars
+    final preview = t.length > 200 ? t.substring(0, 200) : t;
+    return RegExp(r'<(div|table|span|p|h[1-6]|body)\s[^>]*style=').hasMatch(preview);
   }
 
   Widget _buildAttachmentCard(

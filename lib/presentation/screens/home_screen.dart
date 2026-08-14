@@ -13,6 +13,8 @@ import '../widgets/quota_progress_card.dart';
 import '../widgets/search_filter_bar.dart';
 import '../widgets/user_avatar.dart';
 
+import '../widgets/app_background.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -57,6 +59,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _onTabTapped(int index) {
+    if (index == 2) {
+      // Navigasi langsung ke Dashboard Utama (Portal BaknusID)
+      Navigator.pushReplacementNamed(context, '/portal');
+      return;
+    }
     setState(() {
       _currentIndex = index;
     });
@@ -81,32 +88,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _isSignatureLoaded = true;
     }
 
-    return Scaffold(
-      key: _scaffoldKey,
-      drawer: const FolderDrawer(),
-      appBar: _buildAppBar(context, mail, auth, isDark),
-      body: IndexedStack(
-        index: _currentIndex,
-        children: [
-          _buildInboxView(context, mail, isDark),
-          _buildAlertsView(context, mail, isDark),
-          _buildSearchView(context, mail, isDark),
-          _buildProfileView(context, auth, isDark),
-        ],
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        key: _scaffoldKey,
+        drawer: const FolderDrawer(),
+        appBar: _buildAppBar(context, mail, auth, isDark),
+        body: IndexedStack(
+          index: _currentIndex,
+          children: [
+            _buildInboxView(context, mail, isDark),
+            _buildAlertsView(context, mail, isDark),
+            const SizedBox.shrink(), // Index 2 (Portal redirect)
+            _buildSearchView(context, mail, isDark),
+            _buildProfileView(context, auth, isDark),
+          ],
+        ),
+        floatingActionButton: _currentIndex == 0
+            ? FloatingActionButton.extended(
+                onPressed: () {
+                  Navigator.pushNamed(context, '/compose');
+                },
+                icon: const Icon(Icons.edit_outlined, size: 20),
+                label: const Text(
+                  'Tulis Pesan',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+              )
+            : null,
+        bottomNavigationBar: _buildBottomNavigationBar(context, mail, isDark),
       ),
-      floatingActionButton: _currentIndex == 0
-          ? FloatingActionButton.extended(
-              onPressed: () {
-                Navigator.pushNamed(context, '/compose');
-              },
-              icon: const Icon(Icons.edit_outlined, size: 20),
-              label: const Text(
-                'Tulis Pesan',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              ),
-            )
-          : null,
-      bottomNavigationBar: _buildBottomNavigationBar(context, mail, isDark),
     );
   }
 
@@ -128,6 +139,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       title = mail.currentFolder.name;
       actions = [
         IconButton(
+          icon: const Icon(Icons.grid_view_rounded),
+          tooltip: 'Dashboard Utama',
+          onPressed: () => Navigator.pushReplacementNamed(context, '/portal'),
+        ),
+        IconButton(
           icon: const Icon(Icons.refresh_rounded),
           tooltip: 'Segarkan email',
           onPressed: () => mail.loadEmailsForCurrentFolder(),
@@ -148,11 +164,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onPressed: () => mail.loadFoldersAndEmails(),
         ),
       ];
-    } else if (_currentIndex == 2) {
+    } else if (_currentIndex == 3) {
       title = 'Pencarian Email';
       leading = null;
       actions = [];
-    } else if (_currentIndex == 3) {
+    } else if (_currentIndex == 4) {
       title = 'Profil & Akun';
       leading = null;
       actions = [
@@ -224,25 +240,47 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   )
                 : emails.isEmpty
                     ? _buildEmptyState(context, mail, isDark)
-                    : ListView.builder(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        itemCount: emails.length,
-                        itemBuilder: (context, index) {
-                          final email = emails[index];
-                          return EmailTile(
-                            email: email,
-                            onTap: () {
-                              mail.markAsRead(email, isRead: true);
-                              Navigator.pushNamed(
-                                context,
-                                '/email_detail',
-                                arguments: email,
-                              );
-                            },
-                            onToggleStar: () => mail.toggleStar(email),
-                            onDelete: () => mail.deleteEmail(email),
-                          );
+                    : NotificationListener<ScrollNotification>(
+                        onNotification: (ScrollNotification scrollInfo) {
+                          if (!mail.isLoading &&
+                              !mail.isFetchingMore &&
+                              scrollInfo.metrics.pixels ==
+                                  scrollInfo.metrics.maxScrollExtent) {
+                            mail.fetchMoreEmails();
+                          }
+                          return false;
                         },
+                        child: ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          itemCount: emails.length + (mail.isFetchingMore ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index == emails.length) {
+                              return const Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Center(
+                                  child: SpinKitThreeBounce(
+                                    color: AppColors.primary,
+                                    size: 24,
+                                  ),
+                                ),
+                              );
+                            }
+                            final email = emails[index];
+                            return EmailTile(
+                              email: email,
+                              onTap: () {
+                                mail.markAsRead(email, isRead: true);
+                                Navigator.pushNamed(
+                                  context,
+                                  '/email_detail',
+                                  arguments: email,
+                                );
+                              },
+                              onToggleStar: () => mail.toggleStar(email),
+                              onDelete: () => mail.deleteEmail(email),
+                            );
+                          },
+                        ),
                       ),
           ),
         ),
@@ -257,7 +295,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     bool isDark,
   ) {
     final unreadEmails =
-        mail.folders.expand((f) => mail.filteredEmails).where((e) => !e.isRead).toSet().toList();
+        mail.emails.where((e) => !e.isRead && e.folder == 'INBOX').toList();
 
     return RefreshIndicator(
       onRefresh: () => mail.loadFoldersAndEmails(),
@@ -876,13 +914,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               _buildNavItem(
                 index: 2,
+                icon: Icons.grid_view_rounded,
+                activeIcon: Icons.grid_view_rounded,
+                label: 'Portal',
+                isDark: isDark,
+                isPortal: true,
+              ),
+              _buildNavItem(
+                index: 3,
                 icon: Icons.search_rounded,
                 activeIcon: Icons.search_rounded,
                 label: 'Search',
                 isDark: isDark,
               ),
               _buildNavItem(
-                index: 3,
+                index: 4,
                 icon: Icons.person_outline_rounded,
                 activeIcon: Icons.person_rounded,
                 label: 'Profile',
@@ -902,6 +948,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required String label,
     int badgeCount = 0,
     required bool isDark,
+    bool isPortal = false,
   }) {
     final isSelected = _currentIndex == index;
     final activeColor = const Color(0xFF2563EB); // Royal Blue as in image
@@ -913,65 +960,100 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       onTap: () => _onTabTapped(index),
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Icon with optional badge
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(
-                  isSelected ? activeIcon : icon,
-                  size: 24,
-                  color: isSelected ? activeColor : inactiveColor,
+            if (isPortal) ...[
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, AppColors.accent],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                if (badgeCount > 0)
-                  Positioned(
-                    top: -4,
-                    right: -7,
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: const BoxDecoration(
-                        color: AppColors.error,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                      child: Text(
-                        badgeCount > 99 ? '99+' : '$badgeCount',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
+                child: Icon(
+                  icon,
+                  size: 16,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 2),
+              const Text(
+                'Portal',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Container(
+                width: 4,
+                height: 4,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.transparent,
+                ),
+              ),
+            ] else ...[
+              // Icon with optional badge
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(
+                    isSelected ? activeIcon : icon,
+                    size: 24,
+                    color: isSelected ? activeColor : inactiveColor,
+                  ),
+                  if (badgeCount > 0)
+                    Positioned(
+                      top: -4,
+                      right: -7,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: AppColors.error,
+                          shape: BoxShape.circle,
                         ),
-                        textAlign: TextAlign.center,
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Text(
+                          badgeCount > 99 ? '99+' : '$badgeCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                     ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 3),
-
-            // Label Text
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                color: isSelected ? activeColor : inactiveColor,
+                ],
               ),
-            ),
-            const SizedBox(height: 3),
+              const SizedBox(height: 3),
 
-            // Indicator Dot (matching user's design)
-            Container(
-              width: 4,
-              height: 4,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isSelected ? activeColor : Colors.transparent,
+              // Label Text
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? activeColor : inactiveColor,
+                ),
               ),
-            ),
+              const SizedBox(height: 3),
+
+              // Indicator Dot (matching user's design)
+              Container(
+                width: 4,
+                height: 4,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isSelected ? activeColor : Colors.transparent,
+                ),
+              ),
+            ],
           ],
         ),
       ),

@@ -7,6 +7,8 @@ import '../../providers/theme_provider.dart';
 import '../../data/services/storage_service.dart';
 import '../widgets/user_avatar.dart';
 
+import '../widgets/app_background.dart';
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -84,10 +86,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final themeProvider = context.watch<ThemeProvider>();
     final user = auth.currentUser;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pengaturan'),
-      ),
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: const Text('Pengaturan'),
+        ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
@@ -301,8 +307,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildSectionHeader(String title, bool isDark) {
     return Padding(

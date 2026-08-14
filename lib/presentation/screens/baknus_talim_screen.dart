@@ -5,6 +5,8 @@ import '../../data/models/baknus_service_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/baknus_provider.dart';
 
+import '../widgets/app_background.dart';
+
 class BaknusTalimScreen extends StatelessWidget {
   const BaknusTalimScreen({super.key});
 
@@ -28,8 +30,12 @@ class BaknusTalimScreen extends StatelessWidget {
         : (user != null ? 'Civitas' : '');
     final activity = talim?.lastActivity;
 
-    return Scaffold(
-      appBar: AppBar(
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
         title: const Text('BaknusTa\'lim'),
         actions: [
           IconButton(
@@ -269,8 +275,9 @@ class BaknusTalimScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildDetailSections(LastActivityTalim activity, bool isDark) {
     final tipe = activity.tipe.toLowerCase();

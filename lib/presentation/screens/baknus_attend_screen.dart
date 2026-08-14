@@ -5,6 +5,8 @@ import '../../data/models/baknus_service_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/baknus_provider.dart';
 
+import '../widgets/app_background.dart';
+
 class BaknusAttendScreen extends StatelessWidget {
   const BaknusAttendScreen({super.key});
 
@@ -27,8 +29,12 @@ class BaknusAttendScreen extends StatelessWidget {
     final totalHadir = attend?.totalKehadiranBulanIni ?? 0;
     final details = attend?.detailKehadiran ?? [];
 
-    return Scaffold(
-      appBar: AppBar(
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
         title: const Text('BaknusAttend'),
         actions: [
           IconButton(
@@ -243,8 +249,9 @@ class BaknusAttendScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildDetailItem(DetailKehadiran d, bool isDark) {
     final isTerlambat = d.status.toLowerCase().contains('terlambat');
