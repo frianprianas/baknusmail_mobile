@@ -1,4 +1,4 @@
-name: Build iOS App
+name: Build iOS Simulator App for Appetize.io
 
 on:
   push:
@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-ios-simulator:
-    runs-on: macos-latest
+  build-ios-x86-simulator:
+    runs-on: macos-13 # macos-13 uses Intel x86_64 runner compatible with Appetize.io
 
     steps:
       - name: Checkout Repository
@@ -28,10 +28,12 @@ jobs:
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build iOS Simulator App for Appetize.io
-        run: flutter build ios --simulator --no-codesign
+      - name: Build x86_64 iOS Simulator App
+        run: |
+          flutter build ios --simulator --no-codesign
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug -sdk iphonesimulator -arch x86_64 ONLY_ACTIVE_ARCH=NO build
 
-      - name: Compress iphonesimulator Runner.app into ZIP for Appetize.io
+      - name: Compress x86_64 Runner.app into ZIP for Appetize.io
         run: |
           cd build/ios/iphonesimulator
           zip -r Runner.app.zip Runner.app
