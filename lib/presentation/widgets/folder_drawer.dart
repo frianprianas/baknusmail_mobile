@@ -263,7 +263,7 @@ class FolderDrawer extends StatelessWidget {
             // Bottom Actions: Portal, Chat, Settings, Logout
             ListTile(
               dense: true,
-              leading: const Icon(Icons.lock_person_rounded, color: Color(0xFFE11D48)),
+              leading: const Icon(Icons.chat_bubble_rounded, color: Color(0xFFE11D48)),
               title: Row(
                 children: [
                   const Text(
@@ -278,7 +278,7 @@ class FolderDrawer extends StatelessWidget {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: const Text(
-                      'Japri 24J',
+                      'Chat 24J',
                       style: TextStyle(
                         fontSize: 9.5,
                         fontWeight: FontWeight.bold,

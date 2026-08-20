@@ -203,9 +203,9 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Row(
           children: [
-            Icon(Icons.lock_person_rounded, color: Color(0xFFE11D48)),
+            Icon(Icons.chat_bubble_rounded, color: Color(0xFFE11D48)),
             SizedBox(width: 10),
-            Text('BaknusChat (Japri)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text('BaknusChat', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           ],
         ),
         content: Column(
@@ -213,7 +213,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'BaknusChat beroperasi dalam mode **Chat Pribadi (Japri)** 1-on-1 antar civitas sekolah.',
+              'BaknusChat beroperasi dalam mode **Chat Pribadi** 1-on-1 antar civitas sekolah.',
               style: TextStyle(fontSize: 13, height: 1.4),
             ),
             const SizedBox(height: 12),
@@ -345,7 +345,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
                 elevation: 3,
                 icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
                 label: const Text(
-                  'Mulai Japri',
+                  'Mulai Chat',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
                 ),
                 onPressed: () => _showNewDirectChatModal(context, userEmail),
@@ -372,7 +372,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
               ),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.lock_person_rounded, color: Colors.white, size: 18),
+            child: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 18),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -406,7 +406,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
                   ],
                 ),
                 Text(
-                  'Pesan Pribadi (Japri) • 24 Jam',
+                  'Pesan Pribadi • 24 Jam',
                   style: TextStyle(
                     fontSize: 11.5,
                     color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
@@ -487,10 +487,10 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
                 ),
                 const Row(
                   children: [
-                    Icon(Icons.lock_rounded, size: 10, color: Color(0xFFE11D48)),
+                    Icon(Icons.chat_bubble_rounded, size: 10, color: Color(0xFFE11D48)),
                     SizedBox(width: 3),
                     Text(
-                      'Pesan Pribadi (Japri) • 24 Jam',
+                      'Pesan Pribadi • 24 Jam',
                       style: TextStyle(
                         fontSize: 10.5,
                         color: Color(0xFFE11D48),
@@ -521,7 +521,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
       child: const Row(
         children: [
           Icon(
-            Icons.lock_outline_rounded,
+            Icons.chat_bubble_outline_rounded,
             size: 14,
             color: Color(0xFFE11D48),
           ),
@@ -613,7 +613,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
-                            Icons.lock_person_rounded,
+                            Icons.chat_bubble_outline_rounded,
                             size: 42,
                             color: Color(0xFFE11D48),
                           ),
@@ -621,14 +621,14 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
                         const SizedBox(height: 14),
                         Text(
                           _searchFilter.isEmpty
-                              ? 'Belum Ada Obrolan Pribadi (Japri)'
+                              ? 'Belum Ada Obrolan'
                               : 'Percakapan tidak ditemukan',
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           _searchFilter.isEmpty
-                              ? 'Mulai obrolan japri 1-on-1 dengan guru, staff TU, atau siswa lain. Pesan otomatis hilang dalam 24 jam.'
+                              ? 'Mulai obrolan 1-on-1 dengan guru, staff TU, atau siswa lain. Pesan otomatis hilang dalam 24 jam.'
                               : 'Coba kata kunci lain atau mulai chat baru dengan kontak sekolah.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
@@ -1354,7 +1354,7 @@ class _NewDirectChatModalState extends State<_NewDirectChatModal> {
               Icon(Icons.person_search_rounded, color: Color(0xFFE11D48)),
               SizedBox(width: 8),
               Text(
-                'Mulai Chat Pribadi (Japri)',
+                'Mulai Chat Pribadi',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ],
@@ -1395,7 +1395,7 @@ class _NewDirectChatModalState extends State<_NewDirectChatModal> {
                 leading: const Icon(Icons.send_rounded, color: Color(0xFFE11D48)),
                 title: Text('Chat langsung ke "$_searchQuery"',
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                subtitle: const Text('Kirim pesan japri ke alamat ini',
+                subtitle: const Text('Kirim pesan ke alamat ini',
                     style: TextStyle(fontSize: 11)),
                 onTap: () {
                   final tag = UserTagResolver.resolve(email: _searchQuery, displayName: '');

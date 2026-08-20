@@ -11,6 +11,7 @@ import '../widgets/user_avatar.dart';
 import '../widgets/weather_widget.dart';
 import '../widgets/avatar_picker_dialog.dart';
 import '../../data/services/chat_service.dart';
+import '../../core/utils/user_tag_resolver.dart';
 
 import '../widgets/app_background.dart';
 
@@ -383,12 +384,12 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
                           ),
                           _buildServiceButton(
                             title: 'BaknusChat',
-                            subtitle: 'Pesan Pribadi (Japri)',
-                            badge: unreadChat > 0 ? '$unreadChat Baru' : 'Japri',
+                            subtitle: 'Pesan Pribadi',
+                            badge: unreadChat > 0 ? '$unreadChat Baru' : 'Pesan',
                             badgeColor: unreadChat > 0
                                 ? AppColors.error
                                 : const Color(0xFFE11D48),
-                            icon: Icons.lock_person_rounded,
+                            icon: Icons.chat_bubble_rounded,
                             color: const Color(0xFFE11D48),
                             isDark: isDark,
                             onTap: () => Navigator.pushNamed(context, '/chat'),
@@ -434,7 +435,7 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
                       const SizedBox(height: 20),
 
                       // ==================== FEATURED: BAKNUSCHAT BANNER ====================
-                      _buildChatFeaturedCard(context, isDark, userRole, unreadChat),
+                      _buildChatFeaturedCard(context, isDark, userEmail, unreadChat),
                     ],
                   );
                 },
@@ -463,113 +464,250 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
   }
 
   Widget _buildChatFeaturedCard(
-      BuildContext context, bool isDark, String userRole, int unreadChatCount) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF9F1239), Color(0xFFE11D48), Color(0xFFFB7185)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFE11D48).withValues(alpha: 0.3),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+      BuildContext context, bool isDark, String userEmail, int unreadChatCount) {
+    return StreamBuilder<List<DirectConversationItem>>(
+      stream: _chatService.getDirectConversationsStream(userEmail),
+      builder: (context, snapshot) {
+        final conversations = snapshot.data ?? [];
+        final lastConvo = conversations.isNotEmpty ? conversations.first : null;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurface : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () => Navigator.pushNamed(context, '/chat'),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(11),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.lock_person_rounded,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Flexible(
-                            child: Text(
-                              'BaknusChat (Japri)',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                if (lastConvo != null) {
+                  Navigator.pushNamed(
+                    context,
+                    '/chat',
+                    arguments: {
+                      'peerEmail': lastConvo.peerEmail,
+                      'peerName': lastConvo.peerName,
+                      'peerTag': lastConvo.peerTag,
+                    },
+                  );
+                } else {
+                  Navigator.pushNamed(context, '/chat');
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header Bar
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(9),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE11D48).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: unreadChatCount > 0
-                                  ? const Color(0xFFEF4444)
-                                  : Colors.white.withValues(alpha: 0.25),
-                              borderRadius: BorderRadius.circular(6),
+                          child: const Icon(
+                            Icons.chat_bubble_rounded,
+                            color: Color(0xFFE11D48),
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'BaknusChat',
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? AppColors.darkTextPrimary
+                                          : AppColors.lightTextPrimary,
+                                      fontSize: 14.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: unreadChatCount > 0
+                                          ? const Color(0xFFE11D48)
+                                          : (isDark
+                                              ? Colors.white12
+                                              : Colors.black.withValues(alpha: 0.06)),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      unreadChatCount > 0
+                                          ? '$unreadChatCount Pesan Baru'
+                                          : 'Pesan 24 Jam',
+                                      style: TextStyle(
+                                        color: unreadChatCount > 0
+                                            ? Colors.white
+                                            : (isDark
+                                                ? AppColors.darkTextMuted
+                                                : AppColors.lightTextMuted),
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                lastConvo != null
+                                    ? 'Percakapan Terakhir'
+                                    : 'Kirim pesan 1-on-1 dengan guru, TU, atau siswa',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: isDark
+                                      ? AppColors.darkTextMuted
+                                      : AppColors.lightTextMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 13,
+                          color: isDark
+                              ? AppColors.darkTextMuted
+                              : AppColors.lightTextMuted,
+                        ),
+                      ],
+                    ),
+
+                    // Preview kontak & pesan terakhir jika ada
+                    if (lastConvo != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? AppColors.darkSurfaceElevated
+                              : AppColors.lightSurfaceElevated,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isDark
+                                ? AppColors.darkBorder
+                                : AppColors.lightBorder,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            UserAvatar(
+                              email: lastConvo.peerEmail,
+                              name: lastConvo.peerName,
+                              radius: 17,
                             ),
-                            child: Text(
-                              unreadChatCount > 0 ? '$unreadChatCount Pesan Baru' : '24 Jam',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.bold,
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          lastConvo.peerName,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12.5,
+                                            color: isDark
+                                                ? AppColors.darkTextPrimary
+                                                : AppColors.lightTextPrimary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: UserTagResolver.getTagColor(
+                                                  lastConvo.peerTag)
+                                              .withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(5),
+                                        ),
+                                        child: Text(
+                                          lastConvo.peerTag,
+                                          style: TextStyle(
+                                            color: UserTagResolver.getTagColor(
+                                                lastConvo.peerTag),
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    lastConvo.lastMessage,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: isDark
+                                          ? AppColors.darkTextMuted
+                                          : AppColors.lightTextMuted,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Pesan pribadi 1-on-1 antar civitas sekolah (Guru, TU, Siswa). Otomatis hilang 24 jam.',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          fontSize: 11.5,
+                            if (lastConvo.unreadCount > 0) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE11D48),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${lastConvo.unreadCount}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    color: Colors.white,
-                    size: 13,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
