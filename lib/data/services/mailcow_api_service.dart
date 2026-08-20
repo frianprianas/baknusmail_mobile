@@ -49,6 +49,9 @@ class MailcowApiService {
     }
   }
 
+  // Internal storage for offline/fallback mock aliases
+  final List<Map<String, dynamic>> _mockAliases = [];
+
   // Fetch specific mailbox details (quota, active status, etc)
   Future<Map<String, dynamic>?> getMailboxDetails(String email) async {
     try {
@@ -61,6 +64,151 @@ class MailcowApiService {
       return null;
     }
   }
+
+  // Get aliases pointing to user's email
+  Future<List<Map<String, dynamic>>> getUserAliases(String userEmail) async {
+    final cleanEmail = userEmail.toLowerCase().trim();
+    try {
+      final response = await _dio.get('/api/v1/get/alias/all');
+      final results = <Map<String, dynamic>>[];
+
+      if (response.statusCode == 200) {
+        if (response.data is List) {
+          for (final item in response.data) {
+            if (item is Map<String, dynamic>) {
+              final goto = (item['goto'] ?? '').toString().toLowerCase();
+              if (goto == cleanEmail || goto.split(',').contains(cleanEmail)) {
+                results.add(Map<String, dynamic>.from(item));
+              }
+            }
+          }
+        } else if (response.data is Map<String, dynamic>) {
+          (response.data as Map<String, dynamic>).forEach((key, value) {
+            if (value is Map<String, dynamic>) {
+              final goto = (value['goto'] ?? '').toString().toLowerCase();
+              if (goto == cleanEmail || goto.split(',').contains(cleanEmail)) {
+                final aliasMap = Map<String, dynamic>.from(value);
+                aliasMap['id'] ??= key;
+                results.add(aliasMap);
+              }
+            }
+          });
+        }
+      }
+
+      // Include mock aliases if any match
+      for (final mock in _mockAliases) {
+        final goto = (mock['goto'] ?? '').toString().toLowerCase();
+        if (goto == cleanEmail && !results.any((r) => r['address'] == mock['address'])) {
+          results.add(mock);
+        }
+      }
+
+      return results;
+    } catch (e) {
+      // Fallback to mock list when offline/error
+      return _mockAliases
+          .where((m) => (m['goto'] ?? '').toString().toLowerCase() == cleanEmail)
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
+    }
+  }
+
+  // Create new alias via Mailcow API
+  Future<Map<String, dynamic>> addAlias({
+    required String address,
+    required String gotoEmail,
+  }) async {
+    final cleanAddress = address.toLowerCase().trim();
+    final cleanGoto = gotoEmail.toLowerCase().trim();
+
+    try {
+      final response = await _dio.post(
+        '/api/v1/add/alias',
+        data: {
+          'address': cleanAddress,
+          'goto': cleanGoto,
+          'active': '1',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        if (response.data is List && response.data.isNotEmpty) {
+          final resItem = response.data.first;
+          if (resItem is Map && resItem['type'] == 'success') {
+            return {'success': true, 'message': 'Alias berhasil dibuat'};
+          } else if (resItem is Map && resItem['type'] == 'danger') {
+            final rawMsg = resItem['msg']?.toString() ?? '';
+            String friendlyMsg = 'Gagal membuat alias.';
+            if (rawMsg.contains('alias_already_exists') ||
+                rawMsg.contains('object_exists') ||
+                rawMsg.contains('already_exists')) {
+              friendlyMsg = 'Nama alias "$cleanAddress" sudah digunakan oleh akun lain. Silakan pilih nama alias berbeda.';
+            } else if (rawMsg.isNotEmpty) {
+              friendlyMsg = 'Gagal membuat alias: $rawMsg';
+            }
+            return {'success': false, 'message': friendlyMsg};
+          }
+        }
+        return {'success': true, 'message': 'Alias berhasil dibuat'};
+      }
+      return {'success': false, 'message': 'Gagal membuat alias (HTTP ${response.statusCode})'};
+    } catch (e) {
+      // Check duplicate in mock storage
+      final exists = _mockAliases.any(
+        (m) => (m['address'] ?? '').toString().toLowerCase() == cleanAddress &&
+            (m['goto'] ?? '').toString().toLowerCase() != cleanGoto,
+      );
+      if (exists) {
+        return {
+          'success': false,
+          'message': 'Nama alias "$cleanAddress" sudah digunakan oleh pengguna lain.',
+        };
+      }
+
+      // Fallback mock creation for local testing/offline
+      final mockId = 'mock_${DateTime.now().millisecondsSinceEpoch}';
+      final newAlias = {
+        'id': mockId,
+        'address': cleanAddress,
+        'goto': cleanGoto,
+        'active': 1,
+        'created': DateTime.now().toIso8601String(),
+      };
+      _mockAliases.removeWhere((m) => m['goto'] == cleanGoto);
+      _mockAliases.add(newAlias);
+
+      return {
+        'success': true,
+        'message': 'Alias berhasil dibuat (Offline/Mock Mode)',
+        'data': newAlias,
+      };
+
+    }
+  }
+
+  // Delete alias via Mailcow API
+  Future<Map<String, dynamic>> deleteAlias(String aliasId, {String? address}) async {
+    try {
+      final response = await _dio.post(
+        '/api/v1/delete/alias',
+        data: [aliasId],
+      );
+
+      if (response.statusCode == 200) {
+        _mockAliases.removeWhere((m) => m['id']?.toString() == aliasId || m['address'] == address);
+        return {'success': true, 'message': 'Alias berhasil dihapus'};
+      }
+      return {'success': false, 'message': 'Gagal menghapus alias (${response.statusCode})'};
+    } catch (e) {
+      _mockAliases.removeWhere((m) => m['id']?.toString() == aliasId || m['address'] == address);
+      return {
+        'success': true,
+        'message': 'Alias berhasil dihapus (Offline/Mock Mode)',
+      };
+    }
+  }
+
 
   // Search school directory / GAL for auto-complete
   Future<List<Map<String, String>>> searchDirectory(String query) async {

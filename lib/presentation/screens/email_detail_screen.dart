@@ -1,6 +1,10 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/format_helper.dart';
 import '../../data/models/email_message.dart';
@@ -9,6 +13,7 @@ import '../../providers/mail_provider.dart';
 import '../widgets/user_avatar.dart';
 
 import '../widgets/app_background.dart';
+
 
 class EmailDetailScreen extends StatelessWidget {
   const EmailDetailScreen({super.key});
@@ -374,14 +379,7 @@ class EmailDetailScreen extends StatelessWidget {
     }
 
     return InkWell(
-      onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Mengunduh lampiran: ${att.fileName}'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      },
+      onTap: () => _openAttachment(context, att),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.all(10),
@@ -430,4 +428,56 @@ class EmailDetailScreen extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _openAttachment(BuildContext context, AttachmentItem att) async {
+    try {
+      if (kIsWeb) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lampiran "${att.fileName}" (${FormatHelper.formatFileSize(att.sizeInBytes)}) siap.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      if (att.data != null && att.data!.isNotEmpty) {
+        final tempDir = await getTemporaryDirectory();
+        final filePath = '${tempDir.path}/${att.fileName}';
+        final file = File(filePath);
+        await file.writeAsBytes(att.data!);
+
+        final result = await OpenFilex.open(filePath);
+        if (result.type != ResultType.done && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('File tersimpan di: $filePath (${result.message})'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } else if (att.localFilePath != null && att.localFilePath!.isNotEmpty) {
+        await OpenFilex.open(att.localFilePath!);
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Konten lampiran "${att.fileName}" tidak dapat diunduh atau kosong.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal membuka lampiran: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
 }
+

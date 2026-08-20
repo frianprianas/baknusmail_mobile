@@ -5,6 +5,9 @@ import '../../data/models/baknus_service_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/baknus_provider.dart';
 
+import '../../core/config/mailcow_config.dart';
+import '../../core/utils/url_helper.dart';
+
 import '../widgets/app_background.dart';
 
 class BaknusTalimScreen extends StatelessWidget {
@@ -36,28 +39,60 @@ class BaknusTalimScreen extends StatelessWidget {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-        title: const Text('BaknusTa\'lim'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Segarkan',
-            onPressed: () {
-              if (email.isNotEmpty) {
-                baknus.loadAllStats(email);
-              }
-            },
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          if (email.isNotEmpty) {
-            await baknus.loadAllStats(email);
-          }
-        },
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          children: [
+          title: const Text('BaknusTa\'lim'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.language_rounded),
+              tooltip: 'Buka Web BaknusTa\'lim',
+              onPressed: () => UrlHelper.openServiceWebUrl(
+                MailcowConfig.talimWebUrl,
+                userEmail: email,
+                context: context,
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              tooltip: 'Segarkan',
+              onPressed: () {
+                if (email.isNotEmpty) {
+                  baknus.loadAllStats(email);
+                }
+              },
+            ),
+          ],
+        ),
+        body: RefreshIndicator(
+          onRefresh: () async {
+            if (email.isNotEmpty) {
+              await baknus.loadAllStats(email);
+            }
+          },
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            children: [
+              // Tombol Buka Aplikasi Web dengan Auto-Fill Email
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFD97706),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 3,
+                ),
+                icon: const Icon(Icons.open_in_browser_rounded, size: 22),
+                label: const Text(
+                  'Buka Web BaknusTa\'lim (Auto-Fill Login)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                ),
+                onPressed: () => UrlHelper.openServiceWebUrl(
+                  MailcowConfig.talimWebUrl,
+                  userEmail: email,
+                  context: context,
+                ),
+              ),
+              const SizedBox(height: 14),
             // Header Profil (Nama, Email, Role)
             Container(
               padding: const EdgeInsets.all(18),

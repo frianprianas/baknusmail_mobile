@@ -7,11 +7,123 @@ import 'package:provider/provider.dart';
 import '../../main.dart';
 import '../../providers/mail_provider.dart';
 
+class PendingNotificationTarget {
+  final String route;
+  final Map<String, dynamic>? arguments;
+
+  PendingNotificationTarget({required this.route, this.arguments});
+}
+
 class FCMService {
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  static PendingNotificationTarget? pendingTarget;
+  String? _currentRegisteredEmail;
+
+  /// Memeriksa apakah aplikasi dibuka dari klik notifikasi (Terminated / Cold Start)
+  Future<PendingNotificationTarget?> checkPendingNotificationLaunch() async {
+    if (pendingTarget != null) {
+      final target = pendingTarget;
+      pendingTarget = null;
+      return target;
+    }
+
+    try {
+      final initialMsg = await _firebaseMessaging.getInitialMessage();
+      if (initialMsg != null) {
+        return _extractTargetFromRemoteMessage(initialMsg);
+      }
+    } catch (_) {}
+
+    try {
+      final launchDetails =
+          await _localNotificationsPlugin.getNotificationAppLaunchDetails();
+      if (launchDetails?.didNotificationLaunchApp == true &&
+          launchDetails?.notificationResponse?.payload != null) {
+        return _extractTargetFromPayload(
+            launchDetails!.notificationResponse!.payload!);
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  PendingNotificationTarget _extractTargetFromRemoteMessage(RemoteMessage message) {
+    String route = message.data['route']?.toString() ?? '';
+    if (route == '/chat') {
+      final peerEmail = message.data['peer_email'] ?? message.data['sender_email'];
+      final peerName = message.data['peer_name'] ?? message.data['sender_name'];
+      final peerTag = message.data['peer_tag'] ?? message.data['sender_tag'];
+      return PendingNotificationTarget(
+        route: '/chat',
+        arguments: {
+          'peerEmail': peerEmail,
+          'peerName': peerName,
+          'peerTag': peerTag,
+        },
+      );
+    }
+
+    if (route.isEmpty || route == '/home') {
+      final senderStr =
+          message.data['email_from'] ?? message.data['from'] ?? message.data['sender_name'] ?? '';
+      final subjectStr =
+          message.data['subject'] ?? message.data['title'] ?? message.data['notif_title'] ?? '';
+      final config = _getChannelAndSound(senderStr, subjectStr);
+      if (config['id'] == 'channel_baknus_attend_v3') {
+        route = '/attend';
+      } else if (config['id'] == 'channel_baknus_drive_v3') {
+        route = '/drive';
+      } else if (config['id'] == 'channel_baknus_talim_v3') {
+        route = '/talim';
+      } else {
+        route = '/home';
+      }
+    }
+
+    return PendingNotificationTarget(route: route);
+  }
+
+  PendingNotificationTarget? _extractTargetFromPayload(String rawPayload) {
+    try {
+      final decoded = jsonDecode(rawPayload) as Map<String, dynamic>;
+      String route = decoded['route']?.toString() ?? '';
+      if (route == '/chat') {
+        return PendingNotificationTarget(
+          route: '/chat',
+          arguments: {
+            'peerEmail': decoded['peer_email'] ?? decoded['sender_email'],
+            'peerName': decoded['peer_name'] ?? decoded['sender_name'],
+            'peerTag': decoded['peer_tag'] ?? decoded['sender_tag'],
+          },
+        );
+      }
+
+      if (route.isEmpty || route == '/home') {
+        final senderStr =
+            decoded['email_from'] ?? decoded['from'] ?? decoded['sender_name'] ?? '';
+        final subjectStr =
+            decoded['subject'] ?? decoded['title'] ?? decoded['notif_title'] ?? '';
+        final config = _getChannelAndSound(senderStr, subjectStr);
+        if (config['id'] == 'channel_baknus_attend_v3') {
+          route = '/attend';
+        } else if (config['id'] == 'channel_baknus_drive_v3') {
+          route = '/drive';
+        } else if (config['id'] == 'channel_baknus_talim_v3') {
+          route = '/talim';
+        } else {
+          route = '/home';
+        }
+      }
+
+      return PendingNotificationTarget(route: route);
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<void> init() async {
     // 1. Minta izin notifikasi
@@ -31,16 +143,24 @@ class FCMService {
       debugPrint('User declined or has not accepted permission');
     }
 
+    // Listener otomatis jika token FCM mengalami penyegaran (refresh)
+    _firebaseMessaging.onTokenRefresh.listen((newToken) {
+      if (_currentRegisteredEmail != null && _currentRegisteredEmail!.isNotEmpty) {
+        debugPrint('FCM token refreshed, re-registering for $_currentRegisteredEmail');
+        registerToken(_currentRegisteredEmail!);
+      }
+    });
+
     // 2. Setup Local Notifications untuk menangani notifikasi saat aplikasi dibuka (foreground)
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const InitializationSettings initializationSettings =
         InitializationSettings(android: initializationSettingsAndroid);
-    
+
     await _localNotificationsPlugin.initialize(
       settings: initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
-        _navigateToInbox();
+        _handleNotificationTap(null, response.payload);
       },
     );
 
@@ -83,7 +203,7 @@ class FCMService {
         const AndroidNotificationChannel(
           'channel_email_umum_v3',
           'Email Notifications',
-          description: 'Notifikasi email umum',
+          description: 'Notifikasi email umum & pesan',
           importance: Importance.max,
           sound: RawResourceAndroidNotificationSound('sound_umum'),
           playSound: true,
@@ -96,9 +216,12 @@ class FCMService {
       debugPrint('Got a message whilst in the foreground!');
       debugPrint('Message data: ${message.data}');
 
-      final mailProvider = navigatorKey.currentContext?.read<MailProvider>();
-      if (mailProvider != null) {
-        mailProvider.loadFoldersAndEmails().catchError((_) {});
+      final route = message.data['route']?.toString() ?? '';
+      if (route != '/chat') {
+        final mailProvider = navigatorKey.currentContext?.read<MailProvider>();
+        if (mailProvider != null) {
+          mailProvider.loadFoldersAndEmails().catchError((_) {});
+        }
       }
 
       _showLocalNotification(message);
@@ -107,16 +230,14 @@ class FCMService {
     // 4. Ketika notifikasi di-tap dari latar belakang (background)
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
       debugPrint('Notification clicked from background: ${message.data}');
-      _navigateToInbox();
+      _handleNotificationTap(message, null);
     });
 
     // 5. Ketika aplikasi dibuka dari kondisi mati (terminated) karena notifikasi di-tap
     _firebaseMessaging.getInitialMessage().then((RemoteMessage? message) {
       if (message != null) {
         debugPrint('App launched from terminated notification: ${message.data}');
-        Future.delayed(const Duration(milliseconds: 500), () async {
-          _navigateToInbox();
-        });
+        _handleNotificationTap(message, null);
       }
     });
   }
@@ -129,21 +250,10 @@ class FCMService {
         InitializationSettings(android: initializationSettingsAndroid);
     await _localNotificationsPlugin.initialize(settings: initializationSettings);
 
-    // Buat ulang notification channels untuk memastikan suara custom tersedia
     final androidPlugin = _localNotificationsPlugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
-      await androidPlugin.createNotificationChannel(
-        const AndroidNotificationChannel(
-          'channel_email_umum_v3',
-          'Email Notifications',
-          description: 'Notifikasi email umum',
-          importance: Importance.max,
-          sound: RawResourceAndroidNotificationSound('sound_umum'),
-          playSound: true,
-        ),
-      );
       await androidPlugin.createNotificationChannel(
         const AndroidNotificationChannel(
           'channel_baknus_attend_v3',
@@ -171,6 +281,16 @@ class FCMService {
           description: 'Notifikasi kegiatan BaknusTalim',
           importance: Importance.max,
           sound: RawResourceAndroidNotificationSound('sound_baknus_talim'),
+          playSound: true,
+        ),
+      );
+      await androidPlugin.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'channel_email_umum_v3',
+          'Email Notifications',
+          description: 'Notifikasi email umum & pesan',
+          importance: Importance.max,
+          sound: RawResourceAndroidNotificationSound('sound_umum'),
           playSound: true,
         ),
       );
@@ -223,7 +343,7 @@ class FCMService {
       return {
         'id': 'channel_email_umum_v3',
         'name': 'Email Notifications',
-        'desc': 'Notifikasi email umum',
+        'desc': 'Notifikasi email umum & pesan',
         'sound': 'sound_umum',
       };
     }
@@ -231,32 +351,69 @@ class FCMService {
 
   // Menampilkan notifikasi manual saat aplikasi sedang di foreground/background
   Future<void> _showLocalNotification(RemoteMessage message) async {
-    const title = 'Email Baru';
-    const body = 'Anda mendapatkan pesan baru';
+    final String senderStr =
+        message.data['email_from'] ?? message.data['from'] ?? message.data['sender_name'] ?? '';
+    final String subjectStr =
+        message.data['subject'] ?? message.data['title'] ?? message.data['notif_title'] ?? '';
 
-    // Gunakan channel_id & sound_name dari data payload jika ada (dikirim oleh server)
-    // Jika tidak ada, fallback ke _getChannelAndSound berdasarkan pengirim & subjek
+    // Smart detection channel & sound
+    final autoDetectedConfig = _getChannelAndSound(senderStr, subjectStr);
     final String channelIdFromData = message.data['channel_id'] ?? '';
     final String soundNameFromData = message.data['sound_name'] ?? '';
 
     late Map<String, String> channelConfig;
-    if (channelIdFromData.isNotEmpty && soundNameFromData.isNotEmpty) {
+    if (channelIdFromData.isNotEmpty &&
+        soundNameFromData.isNotEmpty &&
+        channelIdFromData != 'channel_email_umum_v3') {
       channelConfig = {
         'id': channelIdFromData,
-        'name': 'Email Notifications',
-        'desc': 'Notifikasi email BaknusMail',
+        'name': 'Email & Chat Notifications',
+        'desc': 'Notifikasi pesan BaknusMail',
         'sound': soundNameFromData,
       };
     } else {
-      final String senderStr = message.data['email_from'] ?? message.data['from'] ?? title;
-      final String subjectStr = message.data['subject'] ?? title;
-      channelConfig = _getChannelAndSound(senderStr, subjectStr);
+      channelConfig = autoDetectedConfig;
     }
 
-    // Cancel any previous notifications so only the latest notification is shown
-    try {
-      await _localNotificationsPlugin.cancelAll();
-    } catch (_) {}
+    String title = message.data['notif_title'] ??
+        message.notification?.title ??
+        '';
+    if (title.isEmpty || title == 'Pesan Masuk' || title == 'Email Baru') {
+      if (channelConfig['id'] == 'channel_baknus_attend_v3') {
+        title = 'BaknusAttend - Presensi';
+      } else if (channelConfig['id'] == 'channel_baknus_drive_v3') {
+        title = 'BaknusDrive - Berkas';
+      } else if (channelConfig['id'] == 'channel_baknus_talim_v3') {
+        title = 'BaknusTalim - Kegiatan';
+      } else {
+        title = senderStr.isNotEmpty ? senderStr.split('<').first.trim() : 'Pesan Masuk';
+      }
+    }
+
+    final String body = message.data['notif_body'] ??
+        message.notification?.body ??
+        (subjectStr.isNotEmpty ? subjectStr : 'Anda mendapat pesan masuk');
+
+    String targetRoute = message.data['route'] ?? '';
+    if (targetRoute.isEmpty || targetRoute == '/home') {
+      if (channelConfig['id'] == 'channel_baknus_attend_v3') {
+        targetRoute = '/attend';
+      } else if (channelConfig['id'] == 'channel_baknus_drive_v3') {
+        targetRoute = '/drive';
+      } else if (channelConfig['id'] == 'channel_baknus_talim_v3') {
+        targetRoute = '/talim';
+      } else {
+        targetRoute = '/home';
+      }
+    }
+
+    final isChat = targetRoute == '/chat';
+    final payloadMap = Map<String, dynamic>.from(message.data);
+    payloadMap['route'] = targetRoute;
+
+    final notifTag = isChat
+        ? 'baknus_chat_${message.data["peer_email"] ?? message.data["sender_email"] ?? "dm"}'
+        : 'baknus_notif_${channelConfig["id"]}';
 
     final AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
@@ -268,49 +425,93 @@ class FCMService {
       playSound: true,
       sound: RawResourceAndroidNotificationSound(channelConfig['sound']!),
       showWhen: true,
-      tag: 'baknus_latest_email',
-      groupKey: 'com.baknus.baknusmail.NOTIFICATIONS',
+      tag: notifTag,
+      groupKey: isChat
+          ? 'com.baknus.baknusmail.CHAT'
+          : 'com.baknus.baknusmail.NOTIFICATIONS',
     );
     final NotificationDetails platformChannelSpecifics =
         NotificationDetails(android: androidPlatformChannelSpecifics);
 
+    final notifId = isChat
+        ? (message.data['peer_email'] ?? message.data['sender_email'] ?? 'chat').hashCode
+        : DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
     await _localNotificationsPlugin.show(
-      id: 8888,
+      id: notifId,
       title: title,
       body: body,
       notificationDetails: platformChannelSpecifics,
-      payload: jsonEncode({'route': '/home'}),
+      payload: jsonEncode(payloadMap),
     );
   }
 
-  // Navigasi langsung ke layar Inbox saat notifikasi di-klik
-  void _navigateToInbox() async {
+  // Navigasi ke layar target (Chat Japri / BaknusAttend / Home / Drive / Talim) saat notifikasi di-klik
+  void _handleNotificationTap(RemoteMessage? message, [String? localPayload]) async {
+    PendingNotificationTarget? target;
+    if (message != null) {
+      target = _extractTargetFromRemoteMessage(message);
+    } else if (localPayload != null && localPayload.isNotEmpty) {
+      target = _extractTargetFromPayload(localPayload);
+    }
+
+    if (target == null) return;
+
     final context = navigatorKey.currentContext;
+
+    if (target.route == '/chat') {
+      navigatorKey.currentState?.pushNamed(
+        '/chat',
+        arguments: target.arguments,
+      );
+      return;
+    }
+
+    if (target.route == '/attend') {
+      navigatorKey.currentState?.pushNamed('/attend');
+      return;
+    }
+
+    if (target.route == '/drive') {
+      navigatorKey.currentState?.pushNamed('/drive');
+      return;
+    }
+
+    if (target.route == '/talim') {
+      navigatorKey.currentState?.pushNamed('/talim');
+      return;
+    }
+
+    // Default Email Masuk: Buka Inbox (/home)
     if (context != null) {
       try {
         final mailProvider = context.read<MailProvider>();
-        await mailProvider.loadFoldersAndEmails();
+        mailProvider.selectInboxAndRefresh().catchError((_) {});
       } catch (_) {}
       navigatorKey.currentState?.pushNamedAndRemoveUntil('/home', (route) => false);
     }
   }
 
-  // Mendapatkan token dan menyimpannya ke Firestore (dipanggil saat login)
+  // Mendapatkan token dan menyimpannya ke Firestore (dipanggil saat login, mendukung multi-device)
   Future<void> registerToken(String email) async {
+    final cleanEmail = email.toLowerCase().trim();
+    if (cleanEmail.isEmpty) return;
+    _currentRegisteredEmail = cleanEmail;
+
     try {
       String? token = await _firebaseMessaging.getToken();
       if (token != null) {
         debugPrint('FCM Token: $token');
-        // Simpan ke Firestore di koleksi user_tokens dengan timeout 4 detik
         await _firestore
             .collection('user_tokens')
-            .doc(email.toLowerCase().trim())
+            .doc(cleanEmail)
             .set({
               'fcm_token': token,
+              'fcm_tokens': FieldValue.arrayUnion([token]),
               'updated_at': FieldValue.serverTimestamp(),
             }, SetOptions(merge: true))
-            .timeout(const Duration(seconds: 4));
-        debugPrint('Token registered for $email');
+            .timeout(const Duration(seconds: 15));
+        debugPrint('Token registered for $cleanEmail');
       }
     } catch (e) {
       debugPrint('Warning: Could not save token to Firestore: $e');
@@ -319,14 +520,29 @@ class FCMService {
 
   // Menghapus token dari Firestore (dipanggil saat logout)
   Future<void> unregisterToken(String email) async {
+    final cleanEmail = email.toLowerCase().trim();
+    if (cleanEmail.isEmpty) return;
+    _currentRegisteredEmail = null;
+
     try {
-      await _firestore
-          .collection('user_tokens')
-          .doc(email.toLowerCase().trim())
-          .delete()
-          .timeout(const Duration(seconds: 3));
+      String? token = await _firebaseMessaging.getToken();
+      if (token != null) {
+        await _firestore
+            .collection('user_tokens')
+            .doc(cleanEmail)
+            .update({
+              'fcm_tokens': FieldValue.arrayRemove([token]),
+            })
+            .timeout(const Duration(seconds: 10));
+      } else {
+        await _firestore
+            .collection('user_tokens')
+            .doc(cleanEmail)
+            .delete()
+            .timeout(const Duration(seconds: 10));
+      }
       await _firebaseMessaging.deleteToken();
-      debugPrint('Token unregistered for $email');
+      debugPrint('Token unregistered for $cleanEmail');
     } catch (e) {
       debugPrint('Warning: Error unregistering FCM token: $e');
     }

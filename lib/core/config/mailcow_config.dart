@@ -19,4 +19,9 @@ class MailcowConfig {
   // Public Avatar Endpoint
   static const String avatarBaseUrl = 'https://baknusmail.smkbn666.sch.id/api/public/avatar';
   static String getAvatarUrl(String email) => '$avatarBaseUrl/${email.trim()}';
+
+  // Integrated Web Service URLs
+  static const String attendWebUrl = 'https://baknusattend.smkbn666.sch.id';
+  static const String driveWebUrl = 'https://baknusdrive.smkbn666.sch.id';
+  static const String talimWebUrl = 'https://baknustalim.smkbn666.sch.id';
 }

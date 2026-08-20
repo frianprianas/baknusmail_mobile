@@ -9,9 +9,12 @@ class MailcowProvider extends ChangeNotifier {
 
   MailcowDomainInfo? _domainInfo;
   MailcowServerHealth? _serverHealth;
+  List<Map<String, dynamic>> _userAliases = [];
   bool _isLoadingDomain = false;
   bool _isLoadingHealth = false;
+  bool _isLoadingAliases = false;
   String? _error;
+  String? _aliasError;
 
   MailcowProvider(this._apiService) {
     refreshAll();
@@ -19,9 +22,14 @@ class MailcowProvider extends ChangeNotifier {
 
   MailcowDomainInfo? get domainInfo => _domainInfo;
   MailcowServerHealth? get serverHealth => _serverHealth;
+  List<Map<String, dynamic>> get userAliases => List.unmodifiable(_userAliases);
   bool get isLoadingDomain => _isLoadingDomain;
   bool get isLoadingHealth => _isLoadingHealth;
+  bool get isLoadingAliases => _isLoadingAliases;
   String? get error => _error;
+  String? get aliasError => _aliasError;
+  bool get hasMaxAliases => _userAliases.isNotEmpty;
+
 
   Future<void> refreshAll() async {
     await Future.wait([
@@ -74,6 +82,86 @@ class MailcowProvider extends ChangeNotifier {
   Future<List<Map<String, String>>> searchDirectory(String query) async {
     return await _apiService.searchDirectory(query);
   }
+
+  Future<void> fetchUserAliases(String userEmail) async {
+    if (userEmail.isEmpty) return;
+    _isLoadingAliases = true;
+    _aliasError = null;
+    notifyListeners();
+
+    try {
+      final aliases = await _apiService.getUserAliases(userEmail);
+      _userAliases = aliases;
+    } catch (e) {
+      _aliasError = 'Gagal memuat daftar alias';
+    } finally {
+      _isLoadingAliases = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> createAlias({
+    required String aliasAddress,
+    required String userEmail,
+  }) async {
+    if (_userAliases.isNotEmpty) {
+      return {
+        'success': false,
+        'message': 'Batas maksimal 1 alias sudah tercapai. Hapus alias saat ini terlebih dahulu.'
+      };
+    }
+
+    _isLoadingAliases = true;
+    _aliasError = null;
+    notifyListeners();
+
+    try {
+      final result = await _apiService.addAlias(
+        address: aliasAddress,
+        gotoEmail: userEmail,
+      );
+
+      if (result['success'] == true) {
+        await fetchUserAliases(userEmail);
+      }
+      return result;
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Gagal membuat alias: $e',
+      };
+    } finally {
+      _isLoadingAliases = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteUserAlias({
+    required String aliasId,
+    required String userEmail,
+    String? address,
+  }) async {
+    _isLoadingAliases = true;
+    _aliasError = null;
+    notifyListeners();
+
+    try {
+      final result = await _apiService.deleteAlias(aliasId, address: address);
+      if (result['success'] == true) {
+        await fetchUserAliases(userEmail);
+      }
+      return result;
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Gagal menghapus alias: $e',
+      };
+    } finally {
+      _isLoadingAliases = false;
+      notifyListeners();
+    }
+  }
+
 
   MailcowDomainInfo _getDefaultDomainInfo() {
     return MailcowDomainInfo(

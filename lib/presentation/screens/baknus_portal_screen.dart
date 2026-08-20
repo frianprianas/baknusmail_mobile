@@ -6,7 +6,11 @@ import '../../data/models/baknus_service_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/baknus_provider.dart';
 import '../../providers/mail_provider.dart';
+import '../../providers/weather_provider.dart';
 import '../widgets/user_avatar.dart';
+import '../widgets/weather_widget.dart';
+import '../widgets/avatar_picker_dialog.dart';
+import '../../data/services/chat_service.dart';
 
 import '../widgets/app_background.dart';
 
@@ -18,12 +22,15 @@ class BaknusPortalScreen extends StatefulWidget {
 }
 
 class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
+  final ChatService _chatService = ChatService();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final email = context.read<AuthProvider>().currentUser?.email ?? '';
       context.read<MailProvider>().loadFoldersAndEmails();
+      context.read<WeatherProvider>().fetchWeather();
       if (email.isNotEmpty) {
         context.read<BaknusProvider>().loadAllStats(email);
       }
@@ -164,6 +171,7 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
           final email = auth.currentUser?.email ?? '';
           await Future.wait([
             mail.loadFoldersAndEmails(),
+            context.read<WeatherProvider>().fetchWeather(forceRefresh: true),
             if (email.isNotEmpty) baknus.loadAllStats(email),
           ]);
         },
@@ -201,10 +209,37 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
                       Expanded(
                         child: Row(
                           children: [
-                            UserAvatar(
-                              name: userName,
-                              email: userEmail,
-                              radius: 25,
+                            GestureDetector(
+                              onTap: () => AvatarPickerDialog.show(context),
+                              child: Stack(
+                                children: [
+                                  UserAvatar(
+                                    name: userName,
+                                    email: userEmail,
+                                    radius: 26,
+                                  ),
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF38BDF8),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: const Color(0xFF1E3A8A),
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: const Icon(
+                                        Icons.camera_alt_rounded,
+                                        size: 11,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                             const SizedBox(width: 14),
                             Expanded(
@@ -293,7 +328,11 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 12),
+
+            // ==================== WIDGET CUACA REAL-TIME (Cileunyi, Kab. Bandung) ====================
+            const WeatherWidget(),
+            const SizedBox(height: 16),
 
             // ==================== MENU LAYANAN UTAMA ====================
             Row(
@@ -316,87 +355,223 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
             ),
             const SizedBox(height: 12),
 
-            // 4 Grid Buttons
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.25,
+            StreamBuilder<int>(
+                stream: _chatService.getUnreadCountStream(userEmail),
+                builder: (context, chatSnap) {
+                  final unreadChat = chatSnap.data ?? 0;
+                  return Column(
+                    children: [
+                      GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 1.25,
+                        children: [
+                          _buildServiceButton(
+                            title: 'BaknusMail',
+                            subtitle: 'Kotak Masuk Email',
+                            badge: unreadMailCount > 0 ? '$unreadMailCount Baru' : 'Inbox',
+                            badgeColor: unreadMailCount > 0
+                                ? AppColors.error
+                                : const Color(0xFF2563EB),
+                            icon: Icons.mark_email_read_rounded,
+                            color: const Color(0xFF1E40AF),
+                            isDark: isDark,
+                            onTap: () => Navigator.pushNamed(context, '/home'),
+                          ),
+                          _buildServiceButton(
+                            title: 'BaknusChat',
+                            subtitle: 'Pesan Pribadi (Japri)',
+                            badge: unreadChat > 0 ? '$unreadChat Baru' : 'Japri',
+                            badgeColor: unreadChat > 0
+                                ? AppColors.error
+                                : const Color(0xFFE11D48),
+                            icon: Icons.lock_person_rounded,
+                            color: const Color(0xFFE11D48),
+                            isDark: isDark,
+                            onTap: () => Navigator.pushNamed(context, '/chat'),
+                          ),
+                          _buildServiceButton(
+                            title: 'BaknusAttend',
+                            subtitle: 'Presensi & Kehadiran',
+                            badge: attend != null
+                                ? '${attend.totalKehadiranBulanIni} Hadir'
+                                : 'Presensi',
+                            badgeColor: const Color(0xFF059669),
+                            icon: Icons.fingerprint_rounded,
+                            color: const Color(0xFF059669),
+                            isDark: isDark,
+                            onTap: () => Navigator.pushNamed(context, '/attend'),
+                          ),
+                          _buildServiceButton(
+                            title: 'BaknusTa\'lim',
+                            subtitle: 'Kegiatan Keagamaan',
+                            badge: talim?.lastActivity != null
+                                ? talim!.lastActivity!.tipe
+                                : 'Ngaji',
+                            badgeColor: const Color(0xFFD97706),
+                            icon: Icons.auto_stories_rounded,
+                            color: const Color(0xFFD97706),
+                            isDark: isDark,
+                            onTap: () => Navigator.pushNamed(context, '/talim'),
+                          ),
+                          _buildServiceButton(
+                            title: 'BaknusDrive',
+                            subtitle: 'Penyimpanan Berkas',
+                            badge: drive != null
+                                ? StorageInfo.formatBytes(drive.storage.usedBytes)
+                                : 'Drive',
+                            badgeColor: const Color(0xFF0284C7),
+                            icon: Icons.cloud_sync_rounded,
+                            color: const Color(0xFF0284C7),
+                            isDark: isDark,
+                            onTap: () => Navigator.pushNamed(context, '/drive'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // ==================== FEATURED: BAKNUSCHAT BANNER ====================
+                      _buildChatFeaturedCard(context, isDark, userRole, unreadChat),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 24),
+
+              // ==================== 2. WIDGET PRESENSI (BaknusAttend) ====================
+              _buildSectionHeader('Kehadiran/Presensi (BaknusAttend)', isDark),
+              _buildAttendWidget(attend, isDark),
+              const SizedBox(height: 20),
+
+              // ==================== 3. WIDGET KEAGAMAAN (BaknusTa'lim) ====================
+              _buildSectionHeader('Kegiatan Keagamaan/Ngaji (BaknusTa\'lim)', isDark),
+              _buildTalimWidget(talim, isDark),
+              const SizedBox(height: 20),
+
+              // ==================== 4. WIDGET PENYIMPANAN (BaknusDrive) ====================
+              _buildSectionHeader('Penyimpanan Berkas/Drive (BaknusDrive)', isDark),
+              _buildDriveWidget(drive, isDark),
+              const SizedBox(height: 30),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChatFeaturedCard(
+      BuildContext context, bool isDark, String userRole, int unreadChatCount) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF9F1239), Color(0xFFE11D48), Color(0xFFFB7185)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFE11D48).withValues(alpha: 0.3),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => Navigator.pushNamed(context, '/chat'),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
               children: [
-                _buildServiceButton(
-                  title: 'BaknusMail',
-                  subtitle: 'Kotak Masuk Email',
-                  badge: unreadMailCount > 0 ? '$unreadMailCount Baru' : 'Inbox',
-                  badgeColor: unreadMailCount > 0
-                      ? AppColors.error
-                      : const Color(0xFF2563EB),
-                  icon: Icons.mark_email_read_rounded,
-                  color: const Color(0xFF1E40AF),
-                  isDark: isDark,
-                  onTap: () => Navigator.pushNamed(context, '/home'),
+                Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.lock_person_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
                 ),
-                _buildServiceButton(
-                  title: 'BaknusAttend',
-                  subtitle: 'Presensi & Kehadiran',
-                  badge: attend != null
-                      ? '${attend.totalKehadiranBulanIni} Hadir'
-                      : 'Presensi',
-                  badgeColor: const Color(0xFF059669),
-                  icon: Icons.fingerprint_rounded,
-                  color: const Color(0xFF059669),
-                  isDark: isDark,
-                  onTap: () => Navigator.pushNamed(context, '/attend'),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Flexible(
+                            child: Text(
+                              'BaknusChat (Japri)',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: unreadChatCount > 0
+                                  ? const Color(0xFFEF4444)
+                                  : Colors.white.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              unreadChatCount > 0 ? '$unreadChatCount Pesan Baru' : '24 Jam',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Pesan pribadi 1-on-1 antar civitas sekolah (Guru, TU, Siswa). Otomatis hilang 24 jam.',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                _buildServiceButton(
-                  title: 'BaknusTa\'lim',
-                  subtitle: 'Kegiatan Keagamaan',
-                  badge: talim?.lastActivity != null
-                      ? talim!.lastActivity!.tipe
-                      : 'Ngaji',
-                  badgeColor: const Color(0xFFD97706),
-                  icon: Icons.auto_stories_rounded,
-                  color: const Color(0xFFD97706),
-                  isDark: isDark,
-                  onTap: () => Navigator.pushNamed(context, '/talim'),
-                ),
-                _buildServiceButton(
-                  title: 'BaknusDrive',
-                  subtitle: 'Penyimpanan Berkas',
-                  badge: drive != null
-                      ? StorageInfo.formatBytes(drive.storage.usedBytes)
-                      : 'Drive',
-                  badgeColor: const Color(0xFF0284C7),
-                  icon: Icons.cloud_sync_rounded,
-                  color: const Color(0xFF0284C7),
-                  isDark: isDark,
-                  onTap: () => Navigator.pushNamed(context, '/drive'),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: Colors.white,
+                    size: 13,
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-
-            // ==================== 2. WIDGET PRESENSI (BaknusAttend) ====================
-            _buildSectionHeader('Kehadiran/Presensi (BaknusAttend)', isDark),
-            _buildAttendWidget(attend, isDark),
-            const SizedBox(height: 20),
-
-            // ==================== 3. WIDGET KEAGAMAAN (BaknusTa'lim) ====================
-            _buildSectionHeader('Kegiatan Keagamaan/Ngaji (BaknusTa\'lim)', isDark),
-            _buildTalimWidget(talim, isDark),
-            const SizedBox(height: 20),
-
-            // ==================== 4. WIDGET PENYIMPANAN (BaknusDrive) ====================
-            _buildSectionHeader('Penyimpanan Berkas/Drive (BaknusDrive)', isDark),
-            _buildDriveWidget(drive, isDark),
-            const SizedBox(height: 30),
-          ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildSectionHeader(String title, bool isDark) {
     return Padding(

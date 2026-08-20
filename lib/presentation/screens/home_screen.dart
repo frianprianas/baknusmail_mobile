@@ -36,7 +36,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // Trigger inbox refresh as soon as the screen is first rendered
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        context.read<MailProvider>().loadFoldersAndEmails();
+        context.read<MailProvider>().selectInboxAndRefresh();
       }
     });
   }
@@ -171,13 +171,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } else if (_currentIndex == 4) {
       title = 'Profil & Akun';
       leading = null;
-      actions = [
-        IconButton(
-          icon: const Icon(Icons.dns_outlined),
-          tooltip: 'Status Server',
-          onPressed: () => Navigator.pushNamed(context, '/server_status'),
-        ),
-      ];
+      actions = [];
     }
 
     return AppBar(
@@ -782,21 +776,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
         const SizedBox(height: 20),
 
-        // Server Status Shortcut
-        Container(
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ListTile(
-            leading: const Icon(Icons.dns_rounded, color: AppColors.primary),
-            title: const Text('Status Server Mailcow', style: TextStyle(fontSize: 14)),
-            subtitle: const Text('Periksa koneksi SMTP, IMAP & HTTPS', style: TextStyle(fontSize: 12)),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => Navigator.pushNamed(context, '/server_status'),
-          ),
-        ),
-        const SizedBox(height: 24),
+
 
         // Logout Button
         SizedBox(

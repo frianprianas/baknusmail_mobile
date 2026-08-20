@@ -105,6 +105,13 @@ class MailProvider extends ChangeNotifier {
     loadEmailsForCurrentFolder();
   }
 
+  Future<void> selectInboxAndRefresh() async {
+    _currentFolder = FolderInfo.getDefaultFolders().first;
+    _searchQuery = '';
+    _activeFilter = MailFilter.all;
+    await loadFoldersAndEmails();
+  }
+
   void clearMailbox() {
     _emails = [];
     _folders = FolderInfo.getDefaultFolders();
@@ -113,6 +120,10 @@ class MailProvider extends ChangeNotifier {
     _activeFilter = MailFilter.all;
     _errorMessage = null;
     notifyListeners();
+  }
+
+  void _sortEmailsByDate() {
+    _emails.sort((a, b) => b.dateTime.compareTo(a.dateTime));
   }
 
   Future<void> loadFoldersAndEmails() async {
@@ -124,6 +135,7 @@ class MailProvider extends ChangeNotifier {
       if (_authProvider.currentUser?.isDemo == true) {
         // Load demo data
         _emails = DemoDataService.getDemoEmails();
+        _sortEmailsByDate();
         _updateFolderCounts();
       } else {
         final currentUserEmail = _authProvider.currentUser?.email;
@@ -132,6 +144,7 @@ class MailProvider extends ChangeNotifier {
         // Load cached first for this specific user
         final cached = _storageService.getCachedEmails(_currentFolder.path, userEmail: currentUserEmail);
         _emails = cached;
+        _sortEmailsByDate();
         _updateFolderCounts();
 
         // Auto-reconnect IMAP if disconnected with saved credentials
@@ -151,6 +164,7 @@ class MailProvider extends ChangeNotifier {
           if (fetched.isNotEmpty || cached.isEmpty) {
             _emails = fetched;
           }
+          _sortEmailsByDate();
           await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
           _updateFolderCounts();
         } else {
@@ -159,6 +173,7 @@ class MailProvider extends ChangeNotifier {
             _emails = [];
           }
         }
+        _sortEmailsByDate();
         _updateFolderCounts();
       }
     } catch (e) {
@@ -189,6 +204,7 @@ class MailProvider extends ChangeNotifier {
           if (fetched.isNotEmpty || _emails.isEmpty) {
             _emails = fetched;
           }
+          _sortEmailsByDate();
           await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: email);
         }
       }
@@ -227,6 +243,7 @@ class MailProvider extends ChangeNotifier {
               _emails.add(newEmail);
             }
           }
+          _sortEmailsByDate();
           await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: email);
         }
       }
@@ -245,6 +262,7 @@ class MailProvider extends ChangeNotifier {
     } else {
       _emails.insert(0, email);
     }
+    _sortEmailsByDate();
     _updateFolderCounts();
     final currentUserEmail = _authProvider.currentUser?.email;
     _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
@@ -257,10 +275,10 @@ class MailProvider extends ChangeNotifier {
       final updated = _emails[index].copyWith(isStarred: !email.isStarred);
       _emails[index] = updated;
       
-      // Update cache immediately to persist the star status
+      // Update cache and folder counts immediately to sync star status
       final currentUserEmail = _authProvider.currentUser?.email;
       await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
-      
+      _updateFolderCounts();
       notifyListeners();
 
       if (!_authProvider.currentUser!.isDemo) {
@@ -436,7 +454,7 @@ class MailProvider extends ChangeNotifier {
         unread = _emails.where((e) => e.folder == 'INBOX' && !e.isRead).length;
       } else if (f.type == FolderType.starred) {
         count = _emails.where((e) => e.isStarred).length;
-        unread = _emails.where((e) => e.isStarred && !e.isRead).length;
+        unread = count; // Badge should reflect total starred items
       } else if (f.type == FolderType.sent) {
         count = _emails.where((e) => e.folder == 'Sent').length;
       } else if (f.type == FolderType.drafts) {

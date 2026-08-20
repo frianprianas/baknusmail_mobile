@@ -38,6 +38,17 @@ class StorageService {
     await _prefs.remove(keyUser);
   }
 
+  // User Avatar
+  static const String keyUserAvatar = 'baknus_user_avatar_';
+
+  Future<void> saveUserAvatar(String email, String base64Avatar) async {
+    await _prefs.setString('$keyUserAvatar$email', base64Avatar);
+  }
+
+  String? getUserAvatar(String email) {
+    return _prefs.getString('$keyUserAvatar$email');
+  }
+
   // Theme mode: 'light', 'dark', 'system'
   String getThemeMode() {
     return _prefs.getString(keyThemeMode) ?? 'system';

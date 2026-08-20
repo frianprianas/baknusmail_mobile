@@ -4,6 +4,7 @@ import 'package:flutter_spinkit/flutter_spinkit.dart';
 import '../../core/config/mailcow_config.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../data/services/fcm_service.dart';
 
 import '../widgets/app_background.dart';
 
@@ -22,12 +23,27 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkSession() async {
-    await Future.delayed(const Duration(milliseconds: 1200));
+    await Future.delayed(const Duration(milliseconds: 1000));
     if (!mounted) return;
 
     final auth = context.read<AuthProvider>();
     if (auth.isAuthenticated) {
-      Navigator.pushReplacementNamed(context, '/portal');
+      final fcmService = context.read<FCMService>();
+      final pendingTarget = await fcmService.checkPendingNotificationLaunch();
+
+      if (pendingTarget != null) {
+        if (mounted) {
+          Navigator.pushReplacementNamed(
+            context,
+            pendingTarget.route,
+            arguments: pendingTarget.arguments,
+          );
+        }
+      } else {
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/portal');
+        }
+      }
     } else {
       Navigator.pushReplacementNamed(context, '/login');
     }

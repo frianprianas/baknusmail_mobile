@@ -11,11 +11,14 @@ import 'data/services/mailcow_api_service.dart';
 import 'data/services/imap_service.dart';
 import 'data/services/smtp_service.dart';
 import 'data/services/baknus_api_service.dart';
+import 'data/services/weather_service.dart';
+import 'data/services/avatar_api_service.dart';
 import 'providers/theme_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/mailcow_provider.dart';
 import 'providers/mail_provider.dart';
 import 'providers/baknus_provider.dart';
+import 'providers/weather_provider.dart';
 import 'presentation/screens/splash_screen.dart';
 import 'presentation/screens/login_screen.dart';
 import 'presentation/screens/baknus_portal_screen.dart';
@@ -27,20 +30,23 @@ import 'presentation/screens/email_detail_screen.dart';
 import 'presentation/screens/compose_screen.dart';
 import 'presentation/screens/server_status_screen.dart';
 import 'presentation/screens/settings_screen.dart';
+import 'presentation/screens/baknus_chat_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // If you're going to use other Firebase services in the background, such as Firestore,
-  // make sure you call `initializeApp` before using other Firebase services.
   await Firebase.initializeApp();
   debugPrint("Handling a background message: ${message.messageId}");
-  try {
-    final fcmService = FCMService();
-    await fcmService.showBackgroundNotification(message);
-  } catch (e) {
-    debugPrint("Background notification error: $e");
+  // Jika pesan sudah memiliki payload 'notification', OS Android FCM otomatis menampilkannya.
+  // Hanya panggil showBackgroundNotification jika payload bertipe data-only (notification == null).
+  if (message.notification == null) {
+    try {
+      final fcmService = FCMService();
+      await fcmService.showBackgroundNotification(message);
+    } catch (e) {
+      debugPrint("Background notification error: $e");
+    }
   }
 }
 
@@ -60,6 +66,8 @@ void main() async {
   final smtpService = SmtpService();
 
   final baknusApiService = BaknusApiService();
+  final weatherService = WeatherService();
+  final avatarApiService = AvatarApiService();
 
   runApp(
     MultiProvider(
@@ -67,6 +75,8 @@ void main() async {
         Provider<StorageService>.value(value: storageService),
         Provider<MailcowApiService>.value(value: apiService),
         Provider<BaknusApiService>.value(value: baknusApiService),
+        Provider<WeatherService>.value(value: weatherService),
+        Provider<AvatarApiService>.value(value: avatarApiService),
         Provider<ImapService>.value(value: imapService),
         Provider<SmtpService>.value(value: smtpService),
         Provider<FCMService>.value(value: fcmService),
@@ -78,6 +88,9 @@ void main() async {
         ),
         ChangeNotifierProvider(
           create: (_) => BaknusProvider(baknusApiService),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => WeatherProvider(weatherService),
         ),
         ChangeNotifierProvider(
           create: (_) => MailcowProvider(apiService),
@@ -132,6 +145,7 @@ class BaknusMailApp extends StatelessWidget {
         '/compose': (context) => const ComposeScreen(),
         '/server_status': (context) => const ServerStatusScreen(),
         '/settings': (context) => const SettingsScreen(),
+        '/chat': (context) => const BaknusChatScreen(),
       },
     );
   }

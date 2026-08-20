@@ -260,7 +260,45 @@ class FolderDrawer extends StatelessWidget {
 
             const Divider(height: 1),
 
-            // Bottom Actions: Portal, Server Status, Settings, Logout
+            // Bottom Actions: Portal, Chat, Settings, Logout
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.lock_person_rounded, color: Color(0xFFE11D48)),
+              title: Row(
+                children: [
+                  const Text(
+                    'BaknusChat',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE11D48).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'Japri 24J',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFE11D48),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              subtitle: const Text(
+                'Obrolan Pribadi Guru, TU & Siswa',
+                style: TextStyle(fontSize: 11),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/chat');
+              },
+            ),
+
             ListTile(
               dense: true,
               leading: const Icon(Icons.hub_rounded, color: AppColors.primary),
@@ -278,19 +316,7 @@ class FolderDrawer extends StatelessWidget {
                 Navigator.pushReplacementNamed(context, '/portal');
               },
             ),
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.dns_outlined, color: AppColors.accent),
-              title: const Text('Status Server'),
-              subtitle: const Text(
-                'mail.smk.baktinusantara666.sch.id',
-                style: TextStyle(fontSize: 11),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/server_status');
-              },
-            ),
+
             ListTile(
               dense: true,
               leading: Icon(

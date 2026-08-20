@@ -31,7 +31,10 @@ class AuthProvider extends ChangeNotifier {
   void _initAuth() {
     final savedUser = _storageService.getUser();
     if (savedUser != null) {
-      _currentUser = savedUser;
+      final cachedAvatar = _storageService.getUserAvatar(savedUser.email);
+      _currentUser = savedUser.copyWith(
+        avatarBase64: cachedAvatar ?? savedUser.avatarBase64,
+      );
       _status = AuthStatus.authenticated;
       notifyListeners();
       _fetchUserQuota();
@@ -214,10 +217,20 @@ class AuthProvider extends ChangeNotifier {
           quotaUsed: quotaUsed,
           quotaTotal: quotaTotal,
           messageCount: msgCount,
+          avatarBase64: _currentUser!.avatarBase64,
         );
         await _storageService.saveUser(_currentUser!);
         notifyListeners();
       }
     } catch (_) {}
+  }
+
+  Future<void> updateAvatarState(String base64Avatar) async {
+    if (_currentUser != null) {
+      _currentUser = _currentUser!.copyWith(avatarBase64: base64Avatar);
+      await _storageService.saveUser(_currentUser!);
+      await _storageService.saveUserAvatar(_currentUser!.email, base64Avatar);
+      notifyListeners();
+    }
   }
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/config/mailcow_config.dart';
+import '../../core/utils/url_helper.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/models/baknus_service_models.dart';
 import '../../providers/auth_provider.dart';
@@ -25,7 +27,7 @@ class BaknusDriveScreen extends StatelessWidget {
     final email = drive?.email.isNotEmpty == true
         ? drive!.email
         : (user?.email ?? '');
-    final role = drive?.role.isNotEmpty == true ? drive!.role : 'Guru / Siswa';
+    final role = drive?.role.isNotEmpty == true ? drive!.role : 'Siswa';
 
     final storage = drive?.storage ??
         StorageInfo(
@@ -47,37 +49,69 @@ class BaknusDriveScreen extends StatelessWidget {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-        title: const Text('BaknusDrive'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Segarkan',
-            onPressed: () {
-              if (email.isNotEmpty) {
-                baknus.loadAllStats(email);
-              }
-            },
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          if (email.isNotEmpty) {
-            await baknus.loadAllStats(email);
-          }
-        },
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          children: [
-            // Header Profil (Nama, Email, Role)
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0284C7), Color(0xFF06B6D4)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+          title: const Text('BaknusDrive'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.language_rounded),
+              tooltip: 'Buka Web BaknusDrive',
+              onPressed: () => UrlHelper.openServiceWebUrl(
+                MailcowConfig.driveWebUrl,
+                userEmail: email,
+                context: context,
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              tooltip: 'Segarkan',
+              onPressed: () {
+                if (email.isNotEmpty) {
+                  baknus.loadAllStats(email);
+                }
+              },
+            ),
+          ],
+        ),
+        body: RefreshIndicator(
+          onRefresh: () async {
+            if (email.isNotEmpty) {
+              await baknus.loadAllStats(email);
+            }
+          },
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            children: [
+              // Tombol Buka Aplikasi Web dengan Auto-Fill Email
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0284C7),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 3,
                 ),
+                icon: const Icon(Icons.open_in_browser_rounded, size: 22),
+                label: const Text(
+                  'Buka Web BaknusDrive (Auto-Fill Login)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                ),
+                onPressed: () => UrlHelper.openServiceWebUrl(
+                  MailcowConfig.driveWebUrl,
+                  userEmail: email,
+                  context: context,
+                ),
+              ),
+              const SizedBox(height: 14),
+              // Header Profil (Nama, Email, Role)
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF0284C7), Color(0xFF06B6D4)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                 borderRadius: BorderRadius.circular(18),
                 boxShadow: [
                   BoxShadow(

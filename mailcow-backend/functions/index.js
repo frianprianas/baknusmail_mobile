@@ -1,24 +1,24 @@
 const { onRequest } = require("firebase-functions/v2/https");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
 
+/**
+ * 1. Webhook Email Masuk (Mailcow -> Firebase FCM)
+ */
 exports.incomingEmailWebhook = onRequest({ cors: true }, async (req, res) => {
-  // Hanya menerima metode POST
   if (req.method !== "POST") {
     return res.status(405).send("Method Not Allowed");
   }
 
   try {
     let body = req.body;
-    // Handle jika body dikirim sebagai raw string JSON
     if (typeof body === "string") {
       try {
         body = JSON.parse(body);
-      } catch (e) {
-        // Abaikan parse error jika sudah object
-      }
+      } catch (e) {}
     }
 
     const to = body?.to;
@@ -32,7 +32,6 @@ exports.incomingEmailWebhook = onRequest({ cors: true }, async (req, res) => {
       });
     }
 
-    // Extract raw body or html and clean HTML tags for notification body/snippet
     const rawContent = body?.snippet || body?.body || body?.text || body?.html || "";
     const cleanSnippet = rawContent
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
@@ -51,7 +50,7 @@ exports.incomingEmailWebhook = onRequest({ cors: true }, async (req, res) => {
       ? cleanSnippet.substring(0, 120) + "..."
       : (cleanSnippet || subject);
 
-    // 1. Ambil FCM Token berdasarkan alamat email (to) dari Firestore
+    // Ambil FCM Token berdasarkan alamat email (to) dari Firestore
     const userDoc = await admin
       .firestore()
       .collection("user_tokens")
@@ -63,13 +62,28 @@ exports.incomingEmailWebhook = onRequest({ cors: true }, async (req, res) => {
       return res.status(404).json({ message: `User token not found for ${to}` });
     }
 
-    const fcmToken = userDoc.data().fcm_token;
+    const userData = userDoc.data();
+    let tokens = userData.fcm_tokens || [];
+    if (tokens.length === 0 && userData.fcm_token) {
+      tokens = [userData.fcm_token];
+    }
 
-    // Tentukan channel_id & sound berdasarkan pengirim / subjek email
+    if (tokens.length === 0) {
+      logger.info(`No valid FCM tokens found for user: ${to}`);
+      return res.status(404).json({ message: `No FCM tokens found for ${to}` });
+    }
+
+    // Tentukan channel_id, sound, route, dan notif_title berdasarkan pengirim / subjek email
     const lowerFrom = (from || "").toLowerCase();
     const lowerSubject = (subject || "").toLowerCase();
     let channelId = "channel_email_umum_v3";
     let soundName = "sound_umum";
+    let route = "/home";
+    let notifTitle = "Pesan Masuk";
+
+    const senderDisplayName = from.includes("<")
+      ? from.split("<")[0].trim()
+      : from.split("@")[0].trim();
 
     if (
       lowerFrom.includes("attend") ||
@@ -81,6 +95,8 @@ exports.incomingEmailWebhook = onRequest({ cors: true }, async (req, res) => {
     ) {
       channelId = "channel_baknus_attend_v3";
       soundName = "sound_baknus_attend";
+      route = "/attend";
+      notifTitle = "BaknusAttend - Presensi";
     } else if (
       lowerFrom.includes("drive") ||
       lowerSubject.includes("baknusdrive") ||
@@ -90,6 +106,8 @@ exports.incomingEmailWebhook = onRequest({ cors: true }, async (req, res) => {
     ) {
       channelId = "channel_baknus_drive_v3";
       soundName = "sound_baknus_drive";
+      route = "/drive";
+      notifTitle = "BaknusDrive - Berkas";
     } else if (
       lowerFrom.includes("talim") ||
       lowerFrom.includes("ta'lim") ||
@@ -100,37 +118,144 @@ exports.incomingEmailWebhook = onRequest({ cors: true }, async (req, res) => {
     ) {
       channelId = "channel_baknus_talim_v3";
       soundName = "sound_baknus_talim";
+      route = "/talim";
+      notifTitle = "BaknusTalim - Kegiatan";
+    } else {
+      notifTitle = senderDisplayName ? `Email dari ${senderDisplayName}` : "Email Baru Masuk";
     }
 
-    // 2. Siapkan payload notifikasi (data-only agar background handler Dart dipanggil)
-    // Dengan data-only, FCM tidak tampilkan notifikasi sendiri - semua ditangani Flutter
-    // sehingga suara custom channel selalu digunakan
     const message = {
       android: {
-        collapseKey: "baknus_email_latest",
+        collapseKey: `baknus_${channelId}`,
         priority: "high",
       },
       data: {
         click_action: "FLUTTER_NOTIFICATION_CLICK",
-        route: "/home",
+        route: route,
         email_to: to,
         email_from: from,
         subject: subject,
-        notif_title: "Email Baru",
-        notif_body: "Anda mendapatkan pesan baru",
+        notif_title: notifTitle,
+        notif_body: displayBody,
         channel_id: channelId,
         sound_name: soundName,
       },
-      token: fcmToken,
+      tokens: tokens,
     };
 
-    // 3. Kirim ke Firebase Cloud Messaging
-    const response = await admin.messaging().send(message);
+    const response = await admin.messaging().sendEachForMulticast(message);
 
-    logger.info(`Successfully sent message to ${to}: ${response}`);
-    return res.status(200).json({ success: true, messageId: response });
+    logger.info(
+      `Multicast result for ${to}: Total=${tokens.length}, Success=${response.successCount}, Failure=${response.failureCount}`
+    );
+
+    return res.status(200).json({
+      success: true,
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+      totalDevices: tokens.length,
+    });
   } catch (error) {
     logger.error("Error sending notification:", error);
     return res.status(500).json({ error: error.message || "Internal Server Error" });
   }
 });
+
+/**
+ * 2. Firestore Trigger Otomatis saat Pesan Japri Baru Masuk (BaknusChat)
+ */
+exports.onChatMessageCreated = onDocumentCreated(
+  "baknus_chat_rooms/{roomId}/messages/{messageId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const data = snap.data();
+    const roomId = event.params.roomId;
+
+    // Hanya kirim notifikasi jika ini adalah room Japri (dm_email1___email2)
+    if (!roomId.startsWith("dm_")) return;
+
+    const senderEmail = (data.senderEmail || "").toLowerCase().trim();
+    const senderName = data.senderName || "Pengguna";
+    const senderRole = data.senderRole || "Siswa";
+    const messageText = data.text || "Mengirim pesan baru";
+
+    // Ekstrak kedua email dari roomId 'dm_email1___email2'
+    const rawEmails = roomId.replace("dm_", "").split("___");
+    if (rawEmails.length < 2) return;
+
+    // Tentukan penerima (email yang bukan senderEmail)
+    let recipientEmail = rawEmails.find(
+      (e) => !senderEmail.replace(/[^a-zA-Z0-9_]/g, "_").includes(e)
+    );
+
+    if (!recipientEmail) {
+      recipientEmail = rawEmails[0] === senderEmail ? rawEmails[1] : rawEmails[0];
+    }
+
+    // Ambil FCM Token penerima dari Firestore
+    const userDoc = await admin
+      .firestore()
+      .collection("user_tokens")
+      .doc(recipientEmail.toLowerCase().trim())
+      .get();
+
+    if (!userDoc.exists) {
+      logger.info(`[BaknusChat] No tokens found for recipient: ${recipientEmail}`);
+      return;
+    }
+
+    const userData = userDoc.data();
+    let tokens = userData.fcm_tokens || [];
+    if (tokens.length === 0 && userData.fcm_token) {
+      tokens = [userData.fcm_token];
+    }
+
+    if (tokens.length === 0) return;
+
+    const notifTitle = `💬 ${senderName} [${senderRole}]`;
+    const notifBody = messageText.length > 100
+      ? messageText.substring(0, 100) + "..."
+      : messageText;
+
+    const payload = {
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "channel_email_umum_v3",
+          priority: "max",
+          defaultSound: true,
+        },
+      },
+      data: {
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
+        route: "/chat",
+        notif_title: notifTitle,
+        notif_body: notifBody,
+        channel_id: "channel_email_umum_v3",
+        sound_name: "sound_umum",
+        sender_email: senderEmail,
+        sender_name: senderName,
+        sender_tag: senderRole,
+        peer_email: senderEmail,
+        peer_name: senderName,
+        peer_tag: senderRole,
+      },
+      notification: {
+        title: notifTitle,
+        body: notifBody,
+      },
+      tokens: tokens,
+    };
+
+    try {
+      const response = await admin.messaging().sendEachForMulticast(payload);
+      logger.info(
+        `[BaknusChat] Sent direct message notification to ${recipientEmail}: Success=${response.successCount}`
+      );
+    } catch (e) {
+      logger.error(`[BaknusChat] Error sending notification to ${recipientEmail}:`, e);
+    }
+  }
+);

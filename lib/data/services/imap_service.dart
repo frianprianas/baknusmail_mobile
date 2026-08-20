@@ -443,27 +443,84 @@ class ImapService {
 
     // Attachments
     final attachments = <AttachmentItem>[];
-    if (msg.parts != null && msg.parts!.isNotEmpty) {
-      for (final part in msg.parts!) {
-        final dispHeader = part.getHeader('Content-Disposition');
-        final disposition = dispHeader?.map((h) => h.value).join(' ').toLowerCase() ?? '';
-        final isAtt = disposition.contains('attachment') || part.decodeFileName() != null;
-        if (isAtt) {
-          final fileName = part.decodeFileName() ?? 'lampiran_${attachments.length + 1}';
-          final mimeType = part.mediaType.text;
-          final contentId = part.getHeader('Content-ID')?.map((h) => h.value).join(' ');
 
-          attachments.add(AttachmentItem(
-            fileName: fileName,
-            mimeType: mimeType,
-            sizeInBytes: 0,
-            contentId: contentId,
-            data: part.decodeContentBinary(),
-            isInline: false,
-          ));
+    void processPart(MimePart part) {
+      final dispHeader = part.getHeader('Content-Disposition');
+      final disposition = dispHeader?.map((h) => h.value).join(' ').toLowerCase() ?? '';
+      final fileName = part.decodeFileName();
+      final mimeType = part.mediaType.text.toLowerCase();
+
+      final isExplicitAttachment = disposition.contains('attachment');
+      final hasFileName = fileName != null && fileName.trim().isNotEmpty;
+      final isInlineWithFileName = disposition.contains('inline') && hasFileName;
+      final isNonTextAttachment = !mimeType.contains('text/plain') &&
+          !mimeType.contains('text/html') &&
+          !mimeType.contains('multipart/') &&
+          hasFileName;
+
+      if (isExplicitAttachment || isInlineWithFileName || isNonTextAttachment) {
+        final ext = part.mediaType.text.contains('/') ? part.mediaType.text.split('/').last : 'bin';
+        final finalFileName = hasFileName
+            ? fileName
+            : 'lampiran_${attachments.length + 1}.$ext';
+        final contentId = part.getHeader('Content-ID')?.map((h) => h.value).join(' ');
+        final binaryData = part.decodeContentBinary();
+
+        int calcSize = binaryData?.length ?? 0;
+        if (calcSize == 0) {
+          final contentLengthHeader = part.getHeader('Content-Length');
+          if (contentLengthHeader != null && contentLengthHeader.isNotEmpty) {
+            final headerVal = contentLengthHeader.first.value;
+            if (headerVal != null) {
+              calcSize = int.tryParse(headerVal.trim()) ?? 0;
+            }
+          }
+        }
+
+        attachments.add(AttachmentItem(
+          fileName: finalFileName,
+          mimeType: part.mediaType.text,
+          sizeInBytes: calcSize,
+          contentId: contentId,
+          data: binaryData,
+          isInline: disposition.contains('inline'),
+        ));
+      }
+
+      // Check child parts (e.g. multipart/mixed, multipart/related, etc.)
+      if (part.parts != null && part.parts!.isNotEmpty) {
+        for (final child in part.parts!) {
+          processPart(child);
         }
       }
     }
+
+    if (msg.parts != null && msg.parts!.isNotEmpty) {
+      for (final p in msg.parts!) {
+        processPart(p);
+      }
+    } else if (msg.decodeFileName() != null) {
+      final binaryData = msg.decodeContentBinary();
+      int calcSize = binaryData?.length ?? 0;
+      if (calcSize == 0) {
+        final contentLengthHeader = msg.getHeader('Content-Length');
+        if (contentLengthHeader != null && contentLengthHeader.isNotEmpty) {
+          final headerVal = contentLengthHeader.first.value;
+          if (headerVal != null) {
+            calcSize = int.tryParse(headerVal.trim()) ?? 0;
+          }
+        }
+      }
+
+      attachments.add(AttachmentItem(
+        fileName: msg.decodeFileName()!,
+        mimeType: msg.mediaType.text,
+        sizeInBytes: calcSize,
+        data: binaryData,
+      ));
+    }
+
+
 
     final isRead = msg.hasFlag(MessageFlags.seen);
     final isStarred = msg.hasFlag(MessageFlags.flagged);
