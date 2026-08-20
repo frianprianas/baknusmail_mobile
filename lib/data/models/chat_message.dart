@@ -12,6 +12,9 @@ class ChatMessage {
   final bool isRead;
   final DateTime? readAt;
   final bool isPending;
+  final String? imageUrl;
+  final int? fileId;
+  final String type; // 'text' | 'image'
 
   ChatMessage({
     required this.id,
@@ -25,6 +28,9 @@ class ChatMessage {
     this.isRead = false,
     this.readAt,
     this.isPending = false,
+    this.imageUrl,
+    this.fileId,
+    this.type = 'text',
   });
 
   factory ChatMessage.fromFirestore(DocumentSnapshot doc) {
@@ -43,6 +49,9 @@ class ChatMessage {
 
     final isReadVal = data['isRead'] == true;
     final readTime = data['readAt'] != null ? parseDate(data['readAt']) : null;
+    final imgUrl = data['imageUrl']?.toString();
+    final fId = data['fileId'] is num ? (data['fileId'] as num).toInt() : null;
+    final msgType = data['type']?.toString() ?? (imgUrl != null && imgUrl.isNotEmpty ? 'image' : 'text');
 
     return ChatMessage(
       id: doc.id,
@@ -56,6 +65,9 @@ class ChatMessage {
       isRead: isReadVal,
       readAt: readTime,
       isPending: false,
+      imageUrl: imgUrl,
+      fileId: fId,
+      type: msgType,
     );
   }
 
@@ -70,8 +82,13 @@ class ChatMessage {
       'roomId': roomId,
       'isRead': isRead,
       'readAt': readAt != null ? Timestamp.fromDate(readAt!) : null,
+      'imageUrl': imageUrl,
+      'fileId': fileId,
+      'type': type,
     };
   }
+
+  bool get isImage => type == 'image' || (imageUrl != null && imageUrl!.isNotEmpty);
 
   bool get isExpired {
     return DateTime.now().isAfter(expiresAt);

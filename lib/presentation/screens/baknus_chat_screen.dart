@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/user_tag_resolver.dart';
@@ -179,6 +181,252 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
         setState(() => _isSending = false);
       }
     }
+  }
+
+  Future<void> _handlePickAndSendImage({
+    required String senderEmail,
+    required String senderName,
+    required String senderTag,
+  }) async {
+    if (_activeDirectPeerEmail == null || _activeDirectPeerEmail!.isEmpty || _isSending) return;
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      final filePath = file.path;
+      final fileBytes = file.bytes;
+      final filename = file.name;
+
+      if (filePath == null && fileBytes == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Gambar tidak dapat dibaca.')),
+          );
+        }
+        return;
+      }
+
+      final caption = await _showImageCaptionDialog(filename);
+      if (caption == null) return; // Dibatalkan oleh pengguna
+
+      final targetRoomId = ChatService.getPrivateRoomId(senderEmail, _activeDirectPeerEmail!);
+
+      setState(() => _isSending = true);
+
+      await _chatService.sendImageMessage(
+        roomId: targetRoomId,
+        senderEmail: senderEmail,
+        senderName: senderName,
+        senderRole: senderTag,
+        caption: caption,
+        filePath: filePath,
+        fileBytes: fileBytes,
+        filename: filename,
+        recipientEmail: _activeDirectPeerEmail,
+        recipientName: _activeDirectPeerName,
+        recipientTag: _activeDirectPeerTag,
+      );
+
+      _scrollToBottom();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Foto berhasil dikirim & disimpan di BaknusDrive'),
+            backgroundColor: Color(0xFF059669),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal mengunggah foto: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSending = false);
+      }
+    }
+  }
+
+  Future<String?> _showImageCaptionDialog(String filename) async {
+    final captionController = TextEditingController();
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkSurface : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE11D48).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.image_rounded, color: Color(0xFFE11D48), size: 22),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Kirim Gambar ke Chat',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                          Text(
+                            filename,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.darkSurfaceElevated : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: TextField(
+                    controller: captionController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Tulis keterangan foto (opsional)...',
+                      hintStyle: TextStyle(fontSize: 13, color: Colors.grey),
+                      border: InputBorder.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(ctx, null),
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('Batal'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.pop(ctx, captionController.text.trim()),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFE11D48),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.send_rounded, size: 16),
+                        label: const Text('Kirim Foto'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showFullImageDialog(String url, String caption) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: EdgeInsets.zero,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4.0,
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                width: MediaQuery.of(context).size.width,
+                height: MediaQuery.of(context).size.height,
+              ),
+            ),
+            Positioned(
+              top: 40,
+              left: 16,
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+            Positioned(
+              top: 40,
+              right: 16,
+              child: IconButton(
+                icon: const Icon(Icons.open_in_browser_rounded, color: Colors.white, size: 24),
+                tooltip: 'Buka di Browser / BaknusDrive',
+                onPressed: () async {
+                  final uri = Uri.parse(url);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
+            ),
+            if (caption.isNotEmpty && caption != '📷 Foto')
+              Positioned(
+                bottom: 30,
+                left: 20,
+                right: 20,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    caption,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 13.5),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showNewDirectChatModal(BuildContext context, String currentEmail) {
@@ -1023,19 +1271,22 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
                       const SizedBox(height: 4),
                     ],
 
-                    // Message text
-                    Text(
-                      message.text,
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        color: isMe
-                            ? Colors.white
-                            : (isDark
-                                ? AppColors.darkTextPrimary
-                                : AppColors.lightTextPrimary),
-                        height: 1.35,
+                    // Image or Text Content
+                    if (message.isImage)
+                      _buildImageBubbleContent(message, isMe, isDark)
+                    else
+                      Text(
+                        message.text,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          color: isMe
+                              ? Colors.white
+                              : (isDark
+                                  ? AppColors.darkTextPrimary
+                                  : AppColors.lightTextPrimary),
+                          height: 1.35,
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 6),
 
                     // Timestamp, Remaining Expiry Pill & Status Pengiriman
@@ -1176,6 +1427,91 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
     );
   }
 
+  Widget _buildImageBubbleContent(ChatMessage message, bool isMe, bool isDark) {
+    final imgUrl = message.imageUrl ?? '';
+    if (imgUrl.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () => _showFullImageDialog(imgUrl, message.text),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              constraints: const BoxConstraints(
+                maxHeight: 220,
+                maxWidth: 240,
+              ),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.black26 : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Image.network(
+                    imgUrl,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        height: 160,
+                        alignment: Alignment.center,
+                        child: const CircularProgressIndicator(strokeWidth: 2),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        height: 130,
+                        padding: const EdgeInsets.all(12),
+                        color: Colors.black12,
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.broken_image_rounded, color: Colors.grey, size: 30),
+                            SizedBox(height: 4),
+                            Text('Gagal memuat gambar', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Icon(Icons.fullscreen_rounded, color: Colors.white, size: 14),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (message.text.isNotEmpty && message.text != '📷 Foto') ...[
+          const SizedBox(height: 6),
+          Text(
+            message.text,
+            style: TextStyle(
+              fontSize: 13.5,
+              color: isMe
+                  ? Colors.white
+                  : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+              height: 1.35,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildInputBar({
     required bool isDark,
     required String senderEmail,
@@ -1184,7 +1520,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
   }) {
     return Container(
       padding: EdgeInsets.only(
-        left: 12,
+        left: 10,
         right: 12,
         top: 8,
         bottom: MediaQuery.of(context).padding.bottom + 8,
@@ -1199,6 +1535,18 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
       ),
       child: Row(
         children: [
+          // Tombol Pilih Foto / Media
+          IconButton(
+            icon: const Icon(Icons.add_photo_alternate_rounded, color: Color(0xFFE11D48)),
+            tooltip: 'Kirim Foto (BaknusDrive)',
+            onPressed: _isSending
+                ? null
+                : () => _handlePickAndSendImage(
+                      senderEmail: senderEmail,
+                      senderName: senderName,
+                      senderTag: senderTag,
+                    ),
+          ),
           Expanded(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14),

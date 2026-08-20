@@ -271,6 +271,147 @@ class ChatService {
     }
   }
 
+  /// Upload media gambar ke BaknusDrive API (API Key: BAKNUS_CHAT_SECRET)
+  Future<Map<String, dynamic>?> uploadImageToBaknusDrive({
+    required String senderEmail,
+    String? filePath,
+    Uint8List? fileBytes,
+    required String filename,
+    String? peerEmail,
+  }) async {
+    try {
+      final uri = Uri.parse('https://baknusdrive.smkbn666.sch.id/api/chat/upload');
+      final request = http.MultipartRequest('POST', uri);
+
+      request.headers['X-Chat-API-Key'] = 'BAKNUS_CHAT_SECRET';
+      request.fields['email'] = senderEmail.trim().toLowerCase();
+      if (peerEmail != null && peerEmail.isNotEmpty) {
+        request.fields['peer_email'] = peerEmail.trim().toLowerCase();
+      }
+
+      if (filePath != null && filePath.isNotEmpty) {
+        request.files.add(await http.MultipartFile.fromPath('file', filePath, filename: filename));
+      } else if (fileBytes != null) {
+        request.files.add(http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
+      } else {
+        throw Exception('File gambar tidak valid');
+      }
+
+      final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true || data['file_url'] != null) {
+          return data;
+        }
+      }
+      debugPrint('Upload image to BaknusDrive failed (${response.statusCode}): ${response.body}');
+      return null;
+    } catch (e) {
+      debugPrint('Error uploading image to BaknusDrive: $e');
+      return null;
+    }
+  }
+
+  /// Kirim pesan gambar ke room chat dengan unggah ke BaknusDrive dan notifikasi FCM
+  Future<void> sendImageMessage({
+    required String roomId,
+    required String senderEmail,
+    required String senderName,
+    required String senderRole,
+    String? caption,
+    String? filePath,
+    Uint8List? fileBytes,
+    required String filename,
+    String? recipientEmail,
+    String? recipientName,
+    String? recipientTag,
+  }) async {
+    // 1. Unggah gambar ke BaknusDrive
+    final uploadResult = await uploadImageToBaknusDrive(
+      senderEmail: senderEmail,
+      filePath: filePath,
+      fileBytes: fileBytes,
+      filename: filename,
+      peerEmail: recipientEmail,
+    );
+
+    if (uploadResult == null || uploadResult['file_url'] == null) {
+      throw Exception('Gagal mengunggah gambar ke BaknusDrive. Periksa koneksi Anda.');
+    }
+
+    final fileUrl = uploadResult['file_url'].toString();
+    final fileId = uploadResult['file_id'] is num ? (uploadResult['file_id'] as num).toInt() : null;
+    final cleanCaption = (caption ?? '').trim();
+    final displayText = cleanCaption.isNotEmpty ? cleanCaption : '📷 Foto';
+
+    final now = DateTime.now();
+    final expiresAt = now.add(const Duration(hours: 24));
+
+    // 2. Simpan pesan gambar ke Firestore
+    await _firestore
+        .collection(roomsCollection)
+        .doc(roomId)
+        .collection('messages')
+        .add({
+      'roomId': roomId,
+      'text': displayText,
+      'imageUrl': fileUrl,
+      'fileId': fileId,
+      'type': 'image',
+      'senderEmail': senderEmail.toLowerCase().trim(),
+      'senderName': senderName.trim(),
+      'senderRole': senderRole.trim(),
+      'timestamp': FieldValue.serverTimestamp(),
+      'expiresAt': Timestamp.fromDate(expiresAt),
+      'isRead': false,
+      'readAt': null,
+    });
+
+    // 3. Simpan riwayat percakapan untuk kedua belah pihak & picu notifikasi FCM jika chat pribadi
+    if (recipientEmail != null && recipientEmail.isNotEmpty) {
+      final sEmail = senderEmail.toLowerCase().trim();
+      final rEmail = recipientEmail.toLowerCase().trim();
+
+      await _firestore
+          .collection(directConversationsCollection)
+          .doc(sEmail)
+          .collection('peers')
+          .doc(rEmail)
+          .set({
+        'peerEmail': rEmail,
+        'peerName': recipientName ?? rEmail.split('@').first,
+        'peerTag': recipientTag ?? 'Siswa',
+        'lastMessage': displayText,
+        'lastTimestamp': FieldValue.serverTimestamp(),
+        'unreadCount': 0,
+      }, SetOptions(merge: true));
+
+      await _firestore
+          .collection(directConversationsCollection)
+          .doc(rEmail)
+          .collection('peers')
+          .doc(sEmail)
+          .set({
+        'peerEmail': sEmail,
+        'peerName': senderName,
+        'peerTag': senderRole,
+        'lastMessage': displayText,
+        'lastTimestamp': FieldValue.serverTimestamp(),
+        'unreadCount': FieldValue.increment(1),
+      }, SetOptions(merge: true));
+
+      _notifyRecipient(
+        recipientEmail: rEmail,
+        senderEmail: sEmail,
+        senderName: senderName,
+        senderRole: senderRole,
+        messageText: displayText,
+      );
+    }
+  }
+
   /// Mengirim push notifikasi FCM ke penerima pesan japri via Backend Server
   void _notifyRecipient({
     required String recipientEmail,
