@@ -125,7 +125,7 @@ class ChatService {
     });
   }
 
-  /// Menandai percakapan dengan peerEmail telah dibaca (unreadCount = 0)
+  /// Menandai percakapan dengan peerEmail telah dibaca (unreadCount = 0 & update status baca di Firestore)
   Future<void> markConversationAsRead(String userEmail, String peerEmail) async {
     final cleanUser = userEmail.toLowerCase().trim();
     final cleanPeer = peerEmail.toLowerCase().trim();
@@ -139,6 +139,51 @@ class ChatService {
           .doc(cleanPeer)
           .update({'unreadCount': 0});
     } catch (_) {}
+
+    final roomId = getPrivateRoomId(cleanUser, cleanPeer);
+    await markRoomMessagesAsRead(roomId: roomId, readerEmail: cleanUser);
+  }
+
+  /// Menandai semua pesan di dalam room dari lawan bicara menjadi 'dibaca' (isRead: true)
+  Future<void> markRoomMessagesAsRead({
+    required String roomId,
+    required String readerEmail,
+  }) async {
+    final cleanReader = readerEmail.toLowerCase().trim();
+    if (cleanReader.isEmpty || roomId.isEmpty) return;
+
+    try {
+      final messagesSnapshot = await _firestore
+          .collection(roomsCollection)
+          .doc(roomId)
+          .collection('messages')
+          .where('isRead', isEqualTo: false)
+          .get();
+
+      if (messagesSnapshot.docs.isEmpty) return;
+
+      final batch = _firestore.batch();
+      int count = 0;
+
+      for (final doc in messagesSnapshot.docs) {
+        final data = doc.data();
+        final sender = (data['senderEmail']?.toString() ?? '').toLowerCase().trim();
+        // Hanya tandai pesan yang dikirim oleh LAWAN BICARA (bukan pesan kita sendiri)
+        if (sender.isNotEmpty && sender != cleanReader) {
+          batch.update(doc.reference, {
+            'isRead': true,
+            'readAt': FieldValue.serverTimestamp(),
+          });
+          count++;
+        }
+      }
+
+      if (count > 0) {
+        await batch.commit();
+      }
+    } catch (e) {
+      debugPrint('Error marking room messages as read: $e');
+    }
   }
 
   /// Kirim pesan baru (Grup atau Japri) dengan TTL otomatis 24 jam dan notifikasi FCM
@@ -159,7 +204,7 @@ class ChatService {
     final expiresAt = now.add(const Duration(hours: 24));
 
     try {
-      // 1. Simpan pesan ke subcollection room
+      // 1. Simpan pesan ke subcollection room dengan status awal isRead = false
       await _firestore
           .collection(roomsCollection)
           .doc(roomId)
@@ -172,6 +217,8 @@ class ChatService {
         'senderRole': senderRole.trim(),
         'timestamp': FieldValue.serverTimestamp(),
         'expiresAt': Timestamp.fromDate(expiresAt),
+        'isRead': false,
+        'readAt': null,
       });
 
       // 2. Jika ini adalah Chat Pribadi (Japri), simpan riwayat percakapan untuk kedua belah pihak & picu notifikasi

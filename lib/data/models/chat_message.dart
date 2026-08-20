@@ -9,6 +9,9 @@ class ChatMessage {
   final DateTime timestamp;
   final DateTime expiresAt;
   final String roomId;
+  final bool isRead;
+  final DateTime? readAt;
+  final bool isPending;
 
   ChatMessage({
     required this.id,
@@ -19,6 +22,9 @@ class ChatMessage {
     required this.timestamp,
     required this.expiresAt,
     required this.roomId,
+    this.isRead = false,
+    this.readAt,
+    this.isPending = false,
   });
 
   factory ChatMessage.fromFirestore(DocumentSnapshot doc) {
@@ -35,6 +41,9 @@ class ChatMessage {
         ? parseDate(data['expiresAt'])
         : createdAt.add(const Duration(hours: 24));
 
+    final isReadVal = data['isRead'] == true;
+    final readTime = data['readAt'] != null ? parseDate(data['readAt']) : null;
+
     return ChatMessage(
       id: doc.id,
       senderEmail: data['senderEmail']?.toString() ?? '',
@@ -44,6 +53,9 @@ class ChatMessage {
       timestamp: createdAt,
       expiresAt: expireTime,
       roomId: data['roomId']?.toString() ?? 'publik',
+      isRead: isReadVal,
+      readAt: readTime,
+      isPending: false,
     );
   }
 
@@ -56,6 +68,8 @@ class ChatMessage {
       'timestamp': FieldValue.serverTimestamp(),
       'expiresAt': Timestamp.fromDate(expiresAt),
       'roomId': roomId,
+      'isRead': isRead,
+      'readAt': readAt != null ? Timestamp.fromDate(readAt!) : null,
     };
   }
 

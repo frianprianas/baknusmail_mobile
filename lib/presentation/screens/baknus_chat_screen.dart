@@ -809,6 +809,19 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
 
         final messages = snapshot.data ?? [];
 
+        // Otomatis tandai pesan masuk sebagai 'dibaca' secara real-time saat pengguna berada di dalam room
+        final hasUnreadIncoming = messages.any(
+          (m) => m.senderEmail.toLowerCase() != userEmail.toLowerCase() && !m.isRead,
+        );
+        if (hasUnreadIncoming) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _chatService.markRoomMessagesAsRead(
+              roomId: targetRoomId,
+              readerEmail: userEmail,
+            );
+          });
+        }
+
         if (messages.isEmpty) {
           return Center(
             child: Padding(
@@ -867,6 +880,40 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildDeliveryStatus(ChatMessage message) {
+    if (message.isPending) {
+      return const Tooltip(
+        message: 'Pending (Sedang mengirim...)',
+        child: Icon(
+          Icons.access_time_rounded,
+          size: 11,
+          color: Colors.white70,
+        ),
+      );
+    }
+
+    if (message.isRead) {
+      return const Tooltip(
+        message: 'Dibaca',
+        child: Icon(
+          Icons.done_all_rounded,
+          size: 14,
+          color: Color(0xFF38BDF8), // WhatsApp Blue Tick style
+        ),
+      );
+    }
+
+    // Terkirim (Tersimpan di server)
+    return const Tooltip(
+      message: 'Terkirim',
+      child: Icon(
+        Icons.done_all_rounded,
+        size: 14,
+        color: Colors.white70,
+      ),
     );
   }
 
@@ -991,7 +1038,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
                     ),
                     const SizedBox(height: 6),
 
-                    // Timestamp & Remaining Expiry Pill
+                    // Timestamp, Remaining Expiry Pill & Status Pengiriman
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1040,6 +1087,10 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
                             ],
                           ),
                         ),
+                        if (isMe) ...[
+                          const SizedBox(width: 5),
+                          _buildDeliveryStatus(message),
+                        ],
                       ],
                     ),
                   ],
@@ -1063,6 +1114,27 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (isMe) ...[
+              if (message.isRead && message.readAt != null)
+                ListTile(
+                  leading: const Icon(Icons.done_all_rounded, color: Color(0xFF38BDF8)),
+                  title: const Text('Status: Sudah Dibaca'),
+                  subtitle: Text(
+                    'Dibaca pada ${message.readAt!.hour.toString().padLeft(2, '0')}:${message.readAt!.minute.toString().padLeft(2, '0')}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                )
+              else if (!message.isPending)
+                const ListTile(
+                  leading: Icon(Icons.done_all_rounded, color: Colors.grey),
+                  title: Text('Status: Terkirim'),
+                  subtitle: Text(
+                    'Pesan sudah tersimpan di server, menunggu dibuka oleh penerima.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+              const Divider(height: 1),
+            ],
             ListTile(
               leading: const Icon(Icons.copy_rounded),
               title: const Text('Salin Teks'),
