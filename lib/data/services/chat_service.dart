@@ -271,8 +271,8 @@ class ChatService {
     }
   }
 
-  /// Upload media gambar ke BaknusDrive API (API Key: BAKNUS_CHAT_SECRET)
-  Future<Map<String, dynamic>?> uploadImageToBaknusDrive({
+  /// Upload media gambar atau berkas (Dokumen/PDF/ZIP/RAR) ke BaknusDrive API (API Key: BAKNUS_CHAT_SECRET)
+  Future<Map<String, dynamic>?> uploadFileToBaknusDrive({
     required String senderEmail,
     String? filePath,
     Uint8List? fileBytes,
@@ -294,7 +294,7 @@ class ChatService {
       } else if (fileBytes != null) {
         request.files.add(http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
       } else {
-        throw Exception('File gambar tidak valid');
+        throw Exception('File tidak valid');
       }
 
       final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
@@ -306,11 +306,155 @@ class ChatService {
           return data;
         }
       }
-      debugPrint('Upload image to BaknusDrive failed (${response.statusCode}): ${response.body}');
+      debugPrint('Upload file to BaknusDrive failed (${response.statusCode}): ${response.body}');
       return null;
     } catch (e) {
-      debugPrint('Error uploading image to BaknusDrive: $e');
+      debugPrint('Error uploading file to BaknusDrive: $e');
       return null;
+    }
+  }
+
+  /// Alias untuk kompatibilitas upload gambar
+  Future<Map<String, dynamic>?> uploadImageToBaknusDrive({
+    required String senderEmail,
+    String? filePath,
+    Uint8List? fileBytes,
+    required String filename,
+    String? peerEmail,
+  }) =>
+      uploadFileToBaknusDrive(
+        senderEmail: senderEmail,
+        filePath: filePath,
+        fileBytes: fileBytes,
+        filename: filename,
+        peerEmail: peerEmail,
+      );
+
+  /// Kirim berkas dokumen/arsip (PDF, DOCX, XLSX, ZIP, RAR, 7Z, TXT) ke room chat dengan unggah ke BaknusDrive
+  Future<void> sendFileMessage({
+    required String roomId,
+    required String senderEmail,
+    required String senderName,
+    required String senderRole,
+    String? caption,
+    String? filePath,
+    Uint8List? fileBytes,
+    required String filename,
+    int? fileSize,
+    String? recipientEmail,
+    String? recipientName,
+    String? recipientTag,
+  }) async {
+    // 1. Unggah berkas ke BaknusDrive
+    final uploadResult = await uploadFileToBaknusDrive(
+      senderEmail: senderEmail,
+      filePath: filePath,
+      fileBytes: fileBytes,
+      filename: filename,
+      peerEmail: recipientEmail,
+    );
+
+    if (uploadResult == null || uploadResult['file_url'] == null) {
+      throw Exception('Gagal mengunggah berkas ke BaknusDrive. Periksa koneksi Anda.');
+    }
+
+    final fileUrl = uploadResult['file_url'].toString();
+    final fileId = uploadResult['file_id'] is num ? (uploadResult['file_id'] as num).toInt() : null;
+    final mimeType = uploadResult['mime_type']?.toString();
+
+    // Deteksi tipe berkas
+    final lowerName = filename.toLowerCase();
+    String msgType = 'file';
+    if (lowerName.endsWith('.jpg') ||
+        lowerName.endsWith('.jpeg') ||
+        lowerName.endsWith('.png') ||
+        lowerName.endsWith('.gif') ||
+        lowerName.endsWith('.webp')) {
+      msgType = 'image';
+    } else if (lowerName.endsWith('.zip') ||
+        lowerName.endsWith('.rar') ||
+        lowerName.endsWith('.7z') ||
+        lowerName.endsWith('.tar') ||
+        lowerName.endsWith('.gz')) {
+      msgType = 'archive';
+    } else {
+      msgType = 'document';
+    }
+
+    final cleanCaption = (caption ?? '').trim();
+    String defaultIconPrefix = '📄';
+    if (msgType == 'image') defaultIconPrefix = '📷';
+    if (msgType == 'archive') defaultIconPrefix = '📦';
+
+    final displayText = cleanCaption.isNotEmpty ? cleanCaption : '$defaultIconPrefix $filename';
+
+    final now = DateTime.now();
+    final expiresAt = now.add(const Duration(hours: 24));
+
+    // 2. Simpan pesan berkas ke Firestore
+    await _firestore
+        .collection(roomsCollection)
+        .doc(roomId)
+        .collection('messages')
+        .add({
+      'roomId': roomId,
+      'text': displayText,
+      'fileUrl': fileUrl,
+      'imageUrl': msgType == 'image' ? fileUrl : null,
+      'fileName': filename,
+      'fileSize': fileSize,
+      'mimeType': mimeType,
+      'fileId': fileId,
+      'type': msgType,
+      'senderEmail': senderEmail.toLowerCase().trim(),
+      'senderName': senderName.trim(),
+      'senderRole': senderRole.trim(),
+      'timestamp': FieldValue.serverTimestamp(),
+      'expiresAt': Timestamp.fromDate(expiresAt),
+      'isRead': false,
+      'readAt': null,
+    });
+
+    // 3. Simpan riwayat percakapan untuk kedua belah pihak & picu notifikasi FCM jika chat pribadi
+    if (recipientEmail != null && recipientEmail.isNotEmpty) {
+      final sEmail = senderEmail.toLowerCase().trim();
+      final rEmail = recipientEmail.toLowerCase().trim();
+
+      await _firestore
+          .collection(directConversationsCollection)
+          .doc(sEmail)
+          .collection('peers')
+          .doc(rEmail)
+          .set({
+        'peerEmail': rEmail,
+        'peerName': recipientName ?? rEmail.split('@').first,
+        'peerTag': recipientTag ?? 'Siswa',
+        'lastMessage': '$defaultIconPrefix $filename',
+        'lastTimestamp': FieldValue.serverTimestamp(),
+        'unreadCount': 0,
+      }, SetOptions(merge: true));
+
+      await _firestore
+          .collection(directConversationsCollection)
+          .doc(rEmail)
+          .collection('peers')
+          .doc(sEmail)
+          .set({
+        'peerEmail': sEmail,
+        'peerName': senderName,
+        'peerTag': senderRole,
+        'lastMessage': '$defaultIconPrefix $filename',
+        'lastTimestamp': FieldValue.serverTimestamp(),
+        'unreadCount': FieldValue.increment(1),
+      }, SetOptions(merge: true));
+
+      _notifyRecipient(
+        recipientEmail: rEmail,
+        senderEmail: sEmail,
+        senderName: senderName,
+        senderRole: senderRole,
+        messageText: '$defaultIconPrefix $filename',
+      );
     }
   }
 

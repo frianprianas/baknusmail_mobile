@@ -183,16 +183,19 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
     }
   }
 
-  Future<void> _handlePickAndSendImage({
+  Future<void> _handlePickAndSendFile({
     required String senderEmail,
     required String senderName,
     required String senderTag,
+    FileType fileType = FileType.any,
+    List<String>? allowedExtensions,
   }) async {
     if (_activeDirectPeerEmail == null || _activeDirectPeerEmail!.isEmpty || _isSending) return;
 
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
+        type: fileType,
+        allowedExtensions: allowedExtensions,
         allowMultiple: false,
         withData: true,
       );
@@ -203,24 +206,25 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
       final filePath = file.path;
       final fileBytes = file.bytes;
       final filename = file.name;
+      final fileSize = file.size;
 
       if (filePath == null && fileBytes == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Gambar tidak dapat dibaca.')),
+            const SnackBar(content: Text('File tidak dapat dibaca.')),
           );
         }
         return;
       }
 
-      final caption = await _showImageCaptionDialog(filename);
+      final caption = await _showFileCaptionDialog(filename, fileSize);
       if (caption == null) return; // Dibatalkan oleh pengguna
 
       final targetRoomId = ChatService.getPrivateRoomId(senderEmail, _activeDirectPeerEmail!);
 
       setState(() => _isSending = true);
 
-      await _chatService.sendImageMessage(
+      await _chatService.sendFileMessage(
         roomId: targetRoomId,
         senderEmail: senderEmail,
         senderName: senderName,
@@ -229,6 +233,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
         filePath: filePath,
         fileBytes: fileBytes,
         filename: filename,
+        fileSize: fileSize,
         recipientEmail: _activeDirectPeerEmail,
         recipientName: _activeDirectPeerName,
         recipientTag: _activeDirectPeerTag,
@@ -238,7 +243,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Foto berhasil dikirim & disimpan di BaknusDrive'),
+            content: Text('Berkas berhasil dikirim & tersimpan di BaknusDrive!'),
             backgroundColor: Color(0xFF059669),
           ),
         );
@@ -247,7 +252,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Gagal mengunggah foto: $e'),
+            content: Text('Gagal mengunggah berkas: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -257,6 +262,327 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
         setState(() => _isSending = false);
       }
     }
+  }
+
+  void _showAttachmentPickerMenu({
+    required String senderEmail,
+    required String senderName,
+    required String senderTag,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurface : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade400,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Kirim Berkas ke BaknusChat',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Media & dokumen tersimpan otomatis di akun BaknusDrive Anda.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 2.3,
+                  children: [
+                    _buildAttachmentOption(
+                      icon: Icons.image_rounded,
+                      color: const Color(0xFFE11D48),
+                      title: 'Foto & Gambar',
+                      subtitle: 'JPG, PNG, WEBP',
+                      isDark: isDark,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _handlePickAndSendFile(
+                          senderEmail: senderEmail,
+                          senderName: senderName,
+                          senderTag: senderTag,
+                          fileType: FileType.image,
+                        );
+                      },
+                    ),
+                    _buildAttachmentOption(
+                      icon: Icons.picture_as_pdf_rounded,
+                      color: const Color(0xFF2563EB),
+                      title: 'Dokumen / PDF',
+                      subtitle: 'PDF, DOCX, XLSX',
+                      isDark: isDark,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _handlePickAndSendFile(
+                          senderEmail: senderEmail,
+                          senderName: senderName,
+                          senderTag: senderTag,
+                          fileType: FileType.custom,
+                          allowedExtensions: [
+                            'pdf',
+                            'doc',
+                            'docx',
+                            'xls',
+                            'xlsx',
+                            'ppt',
+                            'pptx',
+                            'txt',
+                            'csv'
+                          ],
+                        );
+                      },
+                    ),
+                    _buildAttachmentOption(
+                      icon: Icons.folder_zip_rounded,
+                      color: const Color(0xFFD97706),
+                      title: 'File Kompres',
+                      subtitle: 'ZIP, RAR, 7Z, TAR',
+                      isDark: isDark,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _handlePickAndSendFile(
+                          senderEmail: senderEmail,
+                          senderName: senderName,
+                          senderTag: senderTag,
+                          fileType: FileType.custom,
+                          allowedExtensions: ['zip', 'rar', '7z', 'tar', 'gz'],
+                        );
+                      },
+                    ),
+                    _buildAttachmentOption(
+                      icon: Icons.folder_open_rounded,
+                      color: const Color(0xFF059669),
+                      title: 'Semua Berkas',
+                      subtitle: 'Pilih dari HP',
+                      isDark: isDark,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _handlePickAndSendFile(
+                          senderEmail: senderEmail,
+                          senderName: senderName,
+                          senderTag: senderTag,
+                          fileType: FileType.any,
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAttachmentOption({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkSurfaceElevated : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _showFileCaptionDialog(String filename, int fileSize) async {
+    final captionController = TextEditingController();
+    final fileIcon = _getFileIcon(filename);
+    final fileColor = _getFileColor(filename);
+    final formattedSize = ChatMessage(
+      id: '',
+      senderEmail: '',
+      senderName: '',
+      senderRole: '',
+      text: '',
+      timestamp: DateTime.now(),
+      expiresAt: DateTime.now(),
+      roomId: '',
+      fileSize: fileSize,
+    ).formattedFileSize;
+
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkSurface : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: fileColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(fileIcon, color: fileColor, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            filename,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            formattedSize.isNotEmpty
+                                ? '$formattedSize • Tersimpan ke BaknusDrive'
+                                : 'Tersimpan ke BaknusDrive',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.darkSurfaceElevated : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: TextField(
+                    controller: captionController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Tulis pesan / keterangan berkas (opsional)...',
+                      hintStyle: TextStyle(fontSize: 13, color: Colors.grey),
+                      border: InputBorder.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(ctx, null),
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('Batal'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.pop(ctx, captionController.text.trim()),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFE11D48),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.send_rounded, size: 16),
+                        label: const Text('Kirim Berkas'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<String?> _showImageCaptionDialog(String filename) async {
@@ -1271,9 +1597,11 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
                       const SizedBox(height: 4),
                     ],
 
-                    // Image or Text Content
+                    // Image, File (Document/Archive), or Text Content
                     if (message.isImage)
                       _buildImageBubbleContent(message, isMe, isDark)
+                    else if (message.isFile)
+                      _buildFileBubbleContent(message, isMe, isDark)
                     else
                       Text(
                         message.text,
@@ -1427,6 +1755,157 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
     );
   }
 
+  IconData _getFileIcon(String filename) {
+    final lower = filename.toLowerCase();
+    if (lower.endsWith('.pdf')) return Icons.picture_as_pdf_rounded;
+    if (lower.endsWith('.doc') || lower.endsWith('.docx')) return Icons.description_rounded;
+    if (lower.endsWith('.xls') || lower.endsWith('.xlsx') || lower.endsWith('.csv')) return Icons.table_chart_rounded;
+    if (lower.endsWith('.ppt') || lower.endsWith('.pptx')) return Icons.slideshow_rounded;
+    if (lower.endsWith('.zip') || lower.endsWith('.rar') || lower.endsWith('.7z') || lower.endsWith('.tar') || lower.endsWith('.gz')) return Icons.folder_zip_rounded;
+    if (lower.endsWith('.txt') || lower.endsWith('.md')) return Icons.article_rounded;
+    return Icons.insert_drive_file_rounded;
+  }
+
+  Color _getFileColor(String filename) {
+    final lower = filename.toLowerCase();
+    if (lower.endsWith('.pdf')) return const Color(0xFFEF4444);
+    if (lower.endsWith('.doc') || lower.endsWith('.docx')) return const Color(0xFF2563EB);
+    if (lower.endsWith('.xls') || lower.endsWith('.xlsx') || lower.endsWith('.csv')) return const Color(0xFF10B981);
+    if (lower.endsWith('.ppt') || lower.endsWith('.pptx')) return const Color(0xFFF97316);
+    if (lower.endsWith('.zip') || lower.endsWith('.rar') || lower.endsWith('.7z') || lower.endsWith('.tar') || lower.endsWith('.gz')) return const Color(0xFFD97706);
+    if (lower.endsWith('.txt') || lower.endsWith('.md')) return const Color(0xFF0D9488);
+    return const Color(0xFF6366F1);
+  }
+
+  Widget _buildFileBubbleContent(ChatMessage message, bool isMe, bool isDark) {
+    final fileUrl = message.effectiveFileUrl;
+    final filename = message.fileName ?? message.text.replaceFirst(RegExp(r'^[📄📦📷]\s*'), '');
+    final fileIcon = _getFileIcon(filename);
+    final fileColor = _getFileColor(filename);
+
+    return Column(
+      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () async {
+            if (fileUrl.isNotEmpty) {
+              final uri = Uri.parse(fileUrl);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            }
+          },
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 260),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isMe
+                  ? Colors.white.withValues(alpha: 0.15)
+                  : (isDark ? Colors.black26 : Colors.grey.shade100),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isMe
+                    ? Colors.white.withValues(alpha: 0.3)
+                    : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isMe
+                        ? Colors.white.withValues(alpha: 0.25)
+                        : fileColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    fileIcon,
+                    color: isMe ? Colors.white : fileColor,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        filename,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: isMe
+                              ? Colors.white
+                              : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Text(
+                            message.formattedFileSize.isNotEmpty
+                                ? message.formattedFileSize
+                                : 'BaknusDrive',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isMe
+                                  ? Colors.white70
+                                  : (isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '• Buka',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: isMe ? Colors.white60 : Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: isMe ? Colors.white.withValues(alpha: 0.2) : Colors.black12,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.download_rounded,
+                    size: 16,
+                    color: isMe ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (message.text.isNotEmpty &&
+            message.text != filename &&
+            !message.text.startsWith('📄') &&
+            !message.text.startsWith('📦')) ...[
+          const SizedBox(height: 6),
+          Text(
+            message.text,
+            style: TextStyle(
+              fontSize: 13.5,
+              color: isMe
+                  ? Colors.white
+                  : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+              height: 1.35,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildImageBubbleContent(ChatMessage message, bool isMe, bool isDark) {
     final imgUrl = message.imageUrl ?? '';
     if (imgUrl.isEmpty) return const SizedBox.shrink();
@@ -1535,13 +2014,13 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> {
       ),
       child: Row(
         children: [
-          // Tombol Pilih Foto / Media
+          // Tombol Pilih Berkas (Foto / Dokumen / ZIP)
           IconButton(
-            icon: const Icon(Icons.add_photo_alternate_rounded, color: Color(0xFFE11D48)),
-            tooltip: 'Kirim Foto (BaknusDrive)',
+            icon: const Icon(Icons.attach_file_rounded, color: Color(0xFFE11D48)),
+            tooltip: 'Kirim Berkas (BaknusDrive)',
             onPressed: _isSending
                 ? null
-                : () => _handlePickAndSendImage(
+                : () => _showAttachmentPickerMenu(
                       senderEmail: senderEmail,
                       senderName: senderName,
                       senderTag: senderTag,

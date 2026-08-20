@@ -13,8 +13,12 @@ class ChatMessage {
   final DateTime? readAt;
   final bool isPending;
   final String? imageUrl;
+  final String? fileUrl;
+  final String? fileName;
+  final int? fileSize;
+  final String? mimeType;
   final int? fileId;
-  final String type; // 'text' | 'image'
+  final String type; // 'text' | 'image' | 'file' | 'document' | 'archive'
 
   ChatMessage({
     required this.id,
@@ -29,6 +33,10 @@ class ChatMessage {
     this.readAt,
     this.isPending = false,
     this.imageUrl,
+    this.fileUrl,
+    this.fileName,
+    this.fileSize,
+    this.mimeType,
     this.fileId,
     this.type = 'text',
   });
@@ -50,8 +58,20 @@ class ChatMessage {
     final isReadVal = data['isRead'] == true;
     final readTime = data['readAt'] != null ? parseDate(data['readAt']) : null;
     final imgUrl = data['imageUrl']?.toString();
+    final fUrl = data['fileUrl']?.toString() ?? imgUrl;
+    final fName = data['fileName']?.toString();
+    final fSize = data['fileSize'] is num ? (data['fileSize'] as num).toInt() : null;
+    final mType = data['mimeType']?.toString();
     final fId = data['fileId'] is num ? (data['fileId'] as num).toInt() : null;
-    final msgType = data['type']?.toString() ?? (imgUrl != null && imgUrl.isNotEmpty ? 'image' : 'text');
+    
+    String msgType = data['type']?.toString() ?? 'text';
+    if (msgType == 'text') {
+      if (fUrl != null && fUrl.isNotEmpty) {
+        msgType = (imgUrl != null && imgUrl.isNotEmpty && (fName == null || _isImageFileName(fName)))
+            ? 'image'
+            : 'file';
+      }
+    }
 
     return ChatMessage(
       id: doc.id,
@@ -66,9 +86,23 @@ class ChatMessage {
       readAt: readTime,
       isPending: false,
       imageUrl: imgUrl,
+      fileUrl: fUrl,
+      fileName: fName,
+      fileSize: fSize,
+      mimeType: mType,
       fileId: fId,
       type: msgType,
     );
+  }
+
+  static bool _isImageFileName(String name) {
+    final lower = name.toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.gif') ||
+        lower.endsWith('.webp') ||
+        lower.endsWith('.bmp');
   }
 
   Map<String, dynamic> toFirestore() {
@@ -83,12 +117,44 @@ class ChatMessage {
       'isRead': isRead,
       'readAt': readAt != null ? Timestamp.fromDate(readAt!) : null,
       'imageUrl': imageUrl,
+      'fileUrl': fileUrl,
+      'fileName': fileName,
+      'fileSize': fileSize,
+      'mimeType': mimeType,
       'fileId': fileId,
       'type': type,
     };
   }
 
-  bool get isImage => type == 'image' || (imageUrl != null && imageUrl!.isNotEmpty);
+  String get effectiveFileUrl => fileUrl ?? imageUrl ?? '';
+
+  bool get isImage =>
+      type == 'image' ||
+      (imageUrl != null && imageUrl!.isNotEmpty && (type == 'image' || type == 'text'));
+
+  bool get isFile =>
+      type == 'file' ||
+      type == 'document' ||
+      type == 'archive' ||
+      (fileUrl != null && fileUrl!.isNotEmpty && type != 'image');
+
+  bool get isArchive {
+    if (type == 'archive') return true;
+    final name = (fileName ?? text).toLowerCase();
+    return name.endsWith('.zip') ||
+        name.endsWith('.rar') ||
+        name.endsWith('.7z') ||
+        name.endsWith('.tar') ||
+        name.endsWith('.gz');
+  }
+
+  String get formattedFileSize {
+    if (fileSize == null || fileSize! <= 0) return '';
+    if (fileSize! < 1024) return '$fileSize B';
+    if (fileSize! < 1024 * 1024) return '${(fileSize! / 1024).toStringAsFixed(1)} KB';
+    if (fileSize! < 1024 * 1024 * 1024) return '${(fileSize! / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(fileSize! / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
 
   bool get isExpired {
     return DateTime.now().isAfter(expiresAt);
