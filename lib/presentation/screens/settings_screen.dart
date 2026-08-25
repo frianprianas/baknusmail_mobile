@@ -8,6 +8,7 @@ import '../../providers/mailcow_provider.dart';
 import '../../data/services/storage_service.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/avatar_picker_dialog.dart';
+import '../widgets/role_selection_dialog.dart';
 
 import '../widgets/app_background.dart';
 
@@ -315,6 +316,87 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 20),
           ],
+
+          // Peran Akses Application Role
+          _buildSectionHeader('Peran Akses Aplikasi', isDark),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkSurface : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: (auth.isParentMode ? const Color(0xFF059669) : const Color(0xFF2563EB)).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    auth.isParentMode ? Icons.family_restroom_rounded : Icons.school_rounded,
+                    color: auth.isParentMode ? const Color(0xFF059669) : const Color(0xFF2563EB),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        auth.isParentMode ? 'Mode Orang Tua / Wali' : 'Mode Siswa / Guru / TU',
+                        style: const TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        auth.isParentMode
+                            ? 'Akses pemantauan (BaknusChat dinonaktifkan)'
+                            : 'Akses penuh ke semua fitur aplikasi',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () async {
+                    final isParent = await RoleSelectionDialog.show(context);
+                    if (isParent != null && context.mounted) {
+                      await auth.setParentMode(isParent);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              isParent
+                                  ? 'Mode beralih ke Orang Tua / Wali.'
+                                  : 'Mode beralih ke Siswa.',
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                  label: const Text('Ganti'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
 
           // Theme Settings
           _buildSectionHeader('Tampilan & Tema', isDark),

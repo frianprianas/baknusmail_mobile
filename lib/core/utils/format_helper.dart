@@ -81,6 +81,31 @@ class FormatHelper {
     return '$dayName, ${dateTime.day} $monthName ${dateTime.year} • $hour:$minute';
   }
 
+  static String formatLastSeen(DateTime? dateTime) {
+    if (dateTime == null) return 'Terakhir dilihat tidak diketahui';
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final dateOnly = DateTime(dateTime.year, dateTime.month, dateTime.day);
+
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+
+    if (dateOnly == today) {
+      return 'Terakhir dilihat hari ini pukul $hour:$minute';
+    } else if (dateOnly == yesterday) {
+      return 'Terakhir dilihat kemarin pukul $hour:$minute';
+    } else if (now.difference(dateTime).inDays < 7) {
+      final dayName = _indonesianDays[dateTime.weekday - 1];
+      return 'Terakhir dilihat $dayName pukul $hour:$minute';
+    } else {
+      final day = dateTime.day.toString().padLeft(2, '0');
+      final month = dateTime.month.toString().padLeft(2, '0');
+      return 'Terakhir dilihat $day/$month/${dateTime.year} pukul $hour:$minute';
+    }
+  }
+
   static String formatFileSize(int bytes) {
     if (bytes <= 0) return '0 B';
     if (bytes < 1024) return '$bytes B';

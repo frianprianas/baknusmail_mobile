@@ -1,32 +1,80 @@
 class DetailKehadiran {
   final String waktuTap;
+  final String? waktuMasuk;
+  final String? waktuPulang;
   final String status;
   final String keterangan;
   final String? lat;
   final String? long;
   final bool isDinasLuar;
   final String? lokasiDinasLuar;
+  final String? photoUrl;
 
   DetailKehadiran({
     required this.waktuTap,
+    this.waktuMasuk,
+    this.waktuPulang,
     required this.status,
     required this.keterangan,
     this.lat,
     this.long,
     this.isDinasLuar = false,
     this.lokasiDinasLuar,
+    this.photoUrl,
   });
 
   factory DetailKehadiran.fromJson(Map<String, dynamic> json) {
+    final tap = json['waktu_tap']?.toString() ??
+        json['waktu_masuk']?.toString() ??
+        json['jam_masuk']?.toString() ??
+        '';
+    final masuk = json['waktu_masuk']?.toString() ?? json['jam_masuk']?.toString();
+    final pulang = json['waktu_pulang']?.toString() ?? json['jam_pulang']?.toString();
+    final photo = json['photo_url']?.toString() ??
+        json['foto_url']?.toString() ??
+        json['photo']?.toString();
+
     return DetailKehadiran(
-      waktuTap: json['waktu_tap']?.toString() ?? '',
+      waktuTap: tap,
+      waktuMasuk: masuk,
+      waktuPulang: pulang,
       status: json['status']?.toString() ?? 'Hadir',
       keterangan: json['keterangan']?.toString() ?? '',
       lat: json['lat']?.toString(),
       long: json['long']?.toString(),
       isDinasLuar: json['is_dinas_luar'] == 1 || json['is_dinas_luar'] == true,
       lokasiDinasLuar: json['lokasi_dinas_luar']?.toString(),
+      photoUrl: photo,
     );
+  }
+
+  /// Helper getter untuk parsing DateTime dari waktuTap
+  DateTime? get date {
+    if (waktuTap.isEmpty) return null;
+    try {
+      final formatted = waktuTap.trim().replaceAll(' ', 'T');
+      return DateTime.parse(formatted);
+    } catch (_) {
+      try {
+        final clean = waktuTap.trim();
+        final parts = clean.split(' ');
+        final dParts = parts[0].split('-');
+        if (dParts.length == 3) {
+          final year = int.parse(dParts[0]);
+          final month = int.parse(dParts[1]);
+          final day = int.parse(dParts[2]);
+          int hour = 0, minute = 0, second = 0;
+          if (parts.length >= 2) {
+            final tParts = parts[1].split(':');
+            if (tParts.isNotEmpty) hour = int.parse(tParts[0]);
+            if (tParts.length >= 2) minute = int.parse(tParts[1]);
+            if (tParts.length >= 3) second = int.parse(tParts[2].split('.')[0]);
+          }
+          return DateTime(year, month, day, hour, minute, second);
+        }
+      } catch (_) {}
+      return null;
+    }
   }
 }
 
@@ -234,3 +282,71 @@ class BaknusDriveData {
     );
   }
 }
+
+class BaknusDriveBackup {
+  final String backupId;
+  final String filename;
+  final int fileSize;
+  final String backupType;
+  final int messageCount;
+  final DateTime createdAt;
+  final String downloadUrl;
+
+  BaknusDriveBackup({
+    required this.backupId,
+    required this.filename,
+    required this.fileSize,
+    required this.backupType,
+    required this.messageCount,
+    required this.createdAt,
+    required this.downloadUrl,
+  });
+
+  factory BaknusDriveBackup.fromJson(Map<String, dynamic> json) {
+    DateTime parseDate(dynamic val) {
+      if (val is String && val.isNotEmpty) {
+        return DateTime.tryParse(val) ?? DateTime.now();
+      }
+      return DateTime.now();
+    }
+
+    return BaknusDriveBackup(
+      backupId: json['backup_id']?.toString() ?? '',
+      filename: json['filename']?.toString() ?? 'backup.json',
+      fileSize: int.tryParse(json['file_size']?.toString() ?? '0') ?? 0,
+      backupType: json['backup_type']?.toString() ?? 'auto',
+      messageCount: int.tryParse(json['message_count']?.toString() ?? '0') ?? 0,
+      createdAt: parseDate(json['created_at']),
+      downloadUrl: json['download_url']?.toString() ?? '',
+    );
+  }
+
+  int get fileSizeBytes => fileSize;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'backup_id': backupId,
+      'filename': filename,
+      'file_size': fileSize,
+      'backup_type': backupType,
+      'message_count': messageCount,
+      'created_at': createdAt.toIso8601String(),
+      'download_url': downloadUrl,
+    };
+  }
+
+  String get formattedDate {
+    final dt = createdAt.toLocal();
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+      'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
+    ];
+    final day = dt.day.toString().padLeft(2, '0');
+    final month = months[dt.month - 1];
+    final year = dt.year;
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return '$day $month $year, $hour:$min';
+  }
+}
+

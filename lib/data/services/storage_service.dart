@@ -9,6 +9,7 @@ class StorageService {
   static const String keySignature = 'baknus_email_signature';
   static const String keyCachedEmails = 'baknus_cached_emails_';
   static const String keySavedDrafts = 'baknus_saved_drafts';
+  static const String keyParentMode = 'baknus_is_parent_mode';
 
   final SharedPreferences _prefs;
 
@@ -47,6 +48,15 @@ class StorageService {
 
   String? getUserAvatar(String email) {
     return _prefs.getString('$keyUserAvatar$email');
+  }
+
+  // Parent Mode
+  bool isParentMode() {
+    return _prefs.getBool(keyParentMode) ?? false;
+  }
+
+  Future<void> setParentMode(bool isParent) async {
+    await _prefs.setBool(keyParentMode, isParent);
   }
 
   // Theme mode: 'light', 'dark', 'system'

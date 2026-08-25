@@ -8,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/baknus_provider.dart';
 
 import '../widgets/app_background.dart';
+import '../../data/services/chat_backup_service.dart';
 
 class BaknusDriveScreen extends StatelessWidget {
   const BaknusDriveScreen({super.key});
@@ -28,6 +29,10 @@ class BaknusDriveScreen extends StatelessWidget {
         ? drive!.email
         : (user?.email ?? '');
     final role = drive?.role.isNotEmpty == true ? drive!.role : 'Siswa';
+
+    if (email.isNotEmpty) {
+      ChatBackupService().checkAndRunAutoBackup(email);
+    }
 
     final storage = drive?.storage ??
         StorageInfo(

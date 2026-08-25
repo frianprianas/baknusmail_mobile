@@ -3,7 +3,7 @@ class MailcowConfig {
   static const String schoolName = 'SMK Bakti Nusantara 666';
   
   // Mailcow API & Auth Settings
-  static const String apiUrl = 'http://mail.smk.baktinusantara666.sch.id';
+  static const String apiUrl = 'https://mail.smk.baktinusantara666.sch.id';
   static const String apiKey = '925B68-0FF6BB-36B760-F6C051-AAF343';
   static const String domain = 'smk.baktinusantara666.sch.id';
   static const String authMethod = 'SMTP';

@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/mail_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../widgets/app_background.dart';
+import '../widgets/role_selection_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -45,9 +46,13 @@ class _LoginScreenState extends State<LoginScreen> {
     );
 
     if (success && mounted) {
-      await mail.loadFoldersAndEmails();
+      final isParent = await RoleSelectionDialog.show(context);
       if (mounted) {
-        Navigator.pushReplacementNamed(context, '/portal');
+        await auth.setParentMode(isParent ?? false);
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/portal');
+          mail.loadFoldersAndEmails();
+        }
       }
     }
   }
@@ -226,22 +231,52 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                                 const SizedBox(height: 24),
 
-                                // Username Input
+                                 // Username Input
                                 TextFormField(
                                   controller: _usernameController,
                                   keyboardType: TextInputType.emailAddress,
+                                  onChanged: (_) => setState(() {}),
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                                  ),
                                   decoration: InputDecoration(
-                                    labelText: 'Alamat Email / ID',
-                                    hintText: 'nama@smk.baktinusantara666.sch.id',
-                                    prefixIcon: const Icon(Icons.person_outline_rounded),
-                                    suffixText: _usernameController.text.contains('@')
-                                        ? ''
-                                        : '@${MailcowConfig.domain}',
-                                    suffixStyle: TextStyle(
-                                      color: isDark
-                                          ? AppColors.darkTextMuted
-                                          : AppColors.lightTextMuted,
-                                      fontSize: 12,
+                                    labelText: 'Nama Pengguna / ID Email',
+                                    labelStyle: TextStyle(
+                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    hintText: 'Ketik username akun (contoh: budi)',
+                                    hintStyle: TextStyle(
+                                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                      fontSize: 13,
+                                    ),
+                                    filled: true,
+                                    fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                    prefixIcon: Icon(
+                                      Icons.person_outline_rounded,
+                                      color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      borderSide: BorderSide(
+                                        color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      borderSide: BorderSide(
+                                        color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFF2563EB),
+                                        width: 2.0,
+                                      ),
                                     ),
                                   ),
                                   validator: (value) {
@@ -251,26 +286,79 @@ class _LoginScreenState extends State<LoginScreen> {
                                     return null;
                                   },
                                 ),
+                                if (!_usernameController.text.contains('@'))
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 6, left: 6),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.alternate_email_rounded, size: 14, color: Color(0xFF2563EB)),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Domain Otomatis: @${MailcowConfig.domain}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 const SizedBox(height: 16),
 
                                 // Password Input
                                 TextFormField(
                                   controller: _passwordController,
                                   obscureText: _obscurePassword,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                                  ),
                                   decoration: InputDecoration(
                                     labelText: 'Kata Sandi',
-                                    prefixIcon: const Icon(Icons.lock_outline_rounded),
+                                    labelStyle: TextStyle(
+                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    filled: true,
+                                    fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                    prefixIcon: Icon(
+                                      Icons.lock_outline_rounded,
+                                      color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                                    ),
                                     suffixIcon: IconButton(
                                       icon: Icon(
                                         _obscurePassword
                                             ? Icons.visibility_outlined
                                             : Icons.visibility_off_outlined,
+                                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                                       ),
                                       onPressed: () {
                                         setState(() {
                                           _obscurePassword = !_obscurePassword;
                                         });
                                       },
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      borderSide: BorderSide(
+                                        color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      borderSide: BorderSide(
+                                        color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFF2563EB),
+                                        width: 2.0,
+                                      ),
                                     ),
                                   ),
                                   validator: (value) {

@@ -7,7 +7,7 @@ class ChatMessage {
   final String senderRole; // Tag: 'Guru', 'TU', 'Siswa'
   final String text;
   final DateTime timestamp;
-  final DateTime expiresAt;
+  final DateTime? expiresAt;
   final String roomId;
   final bool isRead;
   final DateTime? readAt;
@@ -19,6 +19,19 @@ class ChatMessage {
   final String? mimeType;
   final int? fileId;
   final String type; // 'text' | 'image' | 'file' | 'document' | 'archive'
+  final String? replyToId;
+  final String? replyToSenderName;
+  final String? replyToText;
+  final Map<String, List<String>>? reactions;
+  final bool isPinned;
+  final int? audioDuration;
+  final String? linkTitle;
+  final String? linkDescription;
+  final String? linkImageUrl;
+  final String? linkUrl;
+  final bool isEdited;
+  final DateTime? editedAt;
+  final List<String> starredBy;
 
   ChatMessage({
     required this.id,
@@ -27,7 +40,7 @@ class ChatMessage {
     required this.senderRole,
     required this.text,
     required this.timestamp,
-    required this.expiresAt,
+    this.expiresAt,
     required this.roomId,
     this.isRead = false,
     this.readAt,
@@ -39,6 +52,19 @@ class ChatMessage {
     this.mimeType,
     this.fileId,
     this.type = 'text',
+    this.replyToId,
+    this.replyToSenderName,
+    this.replyToText,
+    this.reactions,
+    this.isPinned = false,
+    this.audioDuration,
+    this.linkTitle,
+    this.linkDescription,
+    this.linkImageUrl,
+    this.linkUrl,
+    this.isEdited = false,
+    this.editedAt,
+    this.starredBy = const [],
   });
 
   factory ChatMessage.fromFirestore(DocumentSnapshot doc) {
@@ -53,7 +79,7 @@ class ChatMessage {
     final createdAt = parseDate(data['timestamp']);
     final expireTime = data['expiresAt'] != null
         ? parseDate(data['expiresAt'])
-        : createdAt.add(const Duration(hours: 24));
+        : null;
 
     final isReadVal = data['isRead'] == true;
     final readTime = data['readAt'] != null ? parseDate(data['readAt']) : null;
@@ -64,7 +90,34 @@ class ChatMessage {
     final mType = data['mimeType']?.toString();
     final fId = data['fileId'] is num ? (data['fileId'] as num).toInt() : null;
     
-    String msgType = data['type']?.toString() ?? 'text';
+    final repId = data['replyToId']?.toString();
+    final repName = data['replyToSenderName']?.toString();
+    final repText = data['replyToText']?.toString();
+    final pinned = data['isPinned'] == true;
+    final aDur = data['audioDuration'] is num ? (data['audioDuration'] as num).toInt() : null;
+    final lTitle = data['linkTitle']?.toString();
+    final lDesc = data['linkDescription']?.toString();
+    final lImg = data['linkImageUrl']?.toString();
+    final lUrl = data['linkUrl']?.toString();
+    final editedVal = data['isEdited'] == true;
+    final editedTime = data['editedAt'] != null ? parseDate(data['editedAt']) : null;
+
+    Map<String, List<String>>? reactMap;
+    if (data['reactions'] is Map) {
+      reactMap = {};
+      (data['reactions'] as Map).forEach((k, v) {
+        if (v is List) {
+          reactMap![k.toString()] = v.map((e) => e.toString()).toList();
+        }
+      });
+    }
+
+    List<String> starredList = [];
+    if (data['starredBy'] is List) {
+      starredList = (data['starredBy'] as List).map((e) => e.toString().toLowerCase().trim()).toList();
+    }
+
+    String msgType = data['messageType']?.toString() ?? data['type']?.toString() ?? 'text';
     if (msgType == 'text') {
       if (fUrl != null && fUrl.isNotEmpty) {
         msgType = (imgUrl != null && imgUrl.isNotEmpty && (fName == null || _isImageFileName(fName)))
@@ -92,6 +145,19 @@ class ChatMessage {
       mimeType: mType,
       fileId: fId,
       type: msgType,
+      replyToId: repId,
+      replyToSenderName: repName,
+      replyToText: repText,
+      reactions: reactMap,
+      isPinned: pinned,
+      audioDuration: aDur,
+      linkTitle: lTitle,
+      linkDescription: lDesc,
+      linkImageUrl: lImg,
+      linkUrl: lUrl,
+      isEdited: editedVal,
+      editedAt: editedTime,
+      starredBy: starredList,
     );
   }
 
@@ -112,7 +178,7 @@ class ChatMessage {
       'senderRole': senderRole,
       'text': text,
       'timestamp': FieldValue.serverTimestamp(),
-      'expiresAt': Timestamp.fromDate(expiresAt),
+      'expiresAt': expiresAt != null ? Timestamp.fromDate(expiresAt!) : null,
       'roomId': roomId,
       'isRead': isRead,
       'readAt': readAt != null ? Timestamp.fromDate(readAt!) : null,
@@ -123,10 +189,36 @@ class ChatMessage {
       'mimeType': mimeType,
       'fileId': fileId,
       'type': type,
+      'replyToId': replyToId,
+      'replyToSenderName': replyToSenderName,
+      'replyToText': replyToText,
+      'reactions': reactions,
+      'isPinned': isPinned,
+      'audioDuration': audioDuration,
+      'linkTitle': linkTitle,
+      'linkDescription': linkDescription,
+      'linkImageUrl': linkImageUrl,
+      'linkUrl': linkUrl,
+      'isEdited': isEdited,
+      'editedAt': editedAt != null ? Timestamp.fromDate(editedAt!) : null,
+      'starredBy': starredBy,
     };
   }
 
+  bool get isAudio =>
+      type == 'audio' ||
+      (fileUrl != null &&
+          (fileUrl!.endsWith('.m4a') ||
+              fileUrl!.endsWith('.aac') ||
+              fileUrl!.endsWith('.mp3') ||
+              fileUrl!.endsWith('.wav')));
+
+  bool get hasLinkPreview =>
+      linkUrl != null && linkUrl!.isNotEmpty && linkTitle != null && linkTitle!.isNotEmpty;
+
   String get effectiveFileUrl => fileUrl ?? imageUrl ?? '';
+
+  bool get isSticker => type == 'sticker' || text.startsWith('🏷️ Stiker:');
 
   bool get isImage =>
       type == 'image' ||
@@ -157,11 +249,18 @@ class ChatMessage {
   }
 
   bool get isExpired {
-    return DateTime.now().isAfter(expiresAt);
+    if (expiresAt == null) return false;
+    return DateTime.now().isAfter(expiresAt!);
+  }
+
+  bool isStarredBy(String userEmail) {
+    final clean = userEmail.toLowerCase().trim();
+    return clean.isNotEmpty && starredBy.contains(clean);
   }
 
   String get remainingTimeFormatted {
-    final diff = expiresAt.difference(DateTime.now());
+    if (expiresAt == null) return '';
+    final diff = expiresAt!.difference(DateTime.now());
     if (diff.isNegative) return 'Kedaluwarsa';
     if (diff.inHours > 0) {
       return '${diff.inHours}j ${diff.inMinutes % 60}m';

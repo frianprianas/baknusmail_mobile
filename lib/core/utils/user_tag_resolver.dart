@@ -12,7 +12,11 @@ class UserTagResolver {
     final cleanName = displayName.toLowerCase().trim();
     final cleanRole = (fallbackRole ?? '').toLowerCase().trim();
 
-    // 1. Cek langsung dari field 'tags' / 'tag' / 'comment' / 'attributes' pada data Mailcow API
+    // 1. Jika fallbackRole sudah bernilai 'Guru' atau 'TU', prioritaskan
+    if (cleanRole == 'guru') return 'Guru';
+    if (cleanRole == 'tu') return 'TU';
+
+    // 2. Cek langsung dari field 'tags' / 'tag' / 'comment' / 'description' / 'name' pada data Mailcow API
     if (mailboxData is Map<String, dynamic>) {
       final tagsRaw = mailboxData['tags'] ?? mailboxData['tag'] ?? mailboxData['tags_array'];
       final tagsString = _flattenTagsToString(tagsRaw).toLowerCase();
@@ -23,34 +27,34 @@ class UserTagResolver {
         return 'Siswa';
       }
 
-      final comment = (mailboxData['comment'] ?? mailboxData['description'] ?? '').toString().toLowerCase();
+      final comment = (mailboxData['comment'] ?? mailboxData['description'] ?? mailboxData['name'] ?? '').toString().toLowerCase();
       if (_matchesGuruPattern(comment)) return 'Guru';
       if (_matchesTUPattern(comment)) return 'TU';
+      if (comment.contains('siswa') || comment.contains('student') || comment.contains('murid')) {
+        return 'Siswa';
+      }
     }
 
-    // 2. Cek dari role yang dikembalikan oleh layanan terintegrasi Baknus (Attend / Drive / Talim)
+    // 3. Cek dari role yang dikembalikan oleh layanan terintegrasi Baknus (Attend / Drive / Talim)
     if (_matchesGuruPattern(cleanRole)) return 'Guru';
     if (_matchesTUPattern(cleanRole)) return 'TU';
     if (cleanRole.contains('siswa') || cleanRole.contains('murid') || cleanRole.contains('santri')) {
       return 'Siswa';
     }
 
-    // 3. Cek dari email
-    if (_matchesGuruPattern(cleanEmail)) return 'Guru';
-    if (_matchesTUPattern(cleanEmail)) return 'TU';
+    // 4. Cek dari email atau display name apakah ada indikasi Guru / TU
+    if (_matchesGuruPattern(cleanEmail) || _matchesGuruPattern(cleanName)) return 'Guru';
+    if (_matchesTUPattern(cleanEmail) || _matchesTUPattern(cleanName)) return 'TU';
 
-    // 4. Cek dari gelar akademik / sapaan pada Nama Pengguna
-    if (_matchesGuruPattern(cleanName)) return 'Guru';
-    if (_matchesTUPattern(cleanName)) return 'TU';
-
-    // 5. Cek apakah format email berupa NIS/NISN siswa (mengandung 4+ angka berurutan)
+    // 5. Cek apakah format email berupa NIS/NISN siswa (mengandung 4+ angka berurutan, misal: 212210045@...)
     final hasNisPattern = RegExp(r'\d{4,}').hasMatch(cleanEmail);
     if (hasNisPattern) {
       return 'Siswa';
     }
 
-    // 6. Default fallback
-    return 'Siswa';
+    // 6. Jika email TIDAK mengandung angka NIS 4+ berurutan (misal: budi@smkbn666.sch.id, yhan@...),
+    // maka akun tersebut adalah Guru / Tenaga Pendidik.
+    return 'Guru';
   }
 
   static bool _matchesGuruPattern(String text) {

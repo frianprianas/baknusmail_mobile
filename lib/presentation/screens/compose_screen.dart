@@ -55,6 +55,22 @@ class _ComposeScreenState extends State<ComposeScreen> {
   void _handleArguments() {
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map<String, dynamic>) {
+      final String? initialBody = args['initialBody'];
+      final String? initialSubject = args['initialSubject'];
+      final String? initialTo = args['initialTo'];
+
+      if (initialBody != null && initialBody.isNotEmpty) {
+        _bodyController.text = initialBody;
+      }
+      if (initialSubject != null && initialSubject.isNotEmpty) {
+        _subjectController.text = initialSubject;
+      }
+      if (initialTo != null && initialTo.isNotEmpty) {
+        if (!_toRecipients.contains(initialTo)) {
+          _toRecipients.add(initialTo);
+        }
+      }
+
       final EmailMessage? replyTo = args['replyTo'];
       final String type = args['type'] ?? '';
 

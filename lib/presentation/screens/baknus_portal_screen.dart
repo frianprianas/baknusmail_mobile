@@ -384,15 +384,28 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
                           ),
                           _buildServiceButton(
                             title: 'BaknusChat',
-                            subtitle: 'Pesan Pribadi',
-                            badge: unreadChat > 0 ? '$unreadChat Baru' : 'Pesan',
-                            badgeColor: unreadChat > 0
-                                ? AppColors.error
-                                : const Color(0xFFE11D48),
+                            subtitle: auth.isParentMode ? 'Mode Ortu (Off)' : 'Pesan Pribadi',
+                            badge: auth.isParentMode
+                                ? 'Nonaktif'
+                                : (unreadChat > 0 ? '$unreadChat Baru' : 'Pesan'),
+                            badgeColor: auth.isParentMode
+                                ? Colors.grey
+                                : (unreadChat > 0 ? AppColors.error : const Color(0xFFE11D48)),
                             icon: Icons.chat_bubble_rounded,
-                            color: const Color(0xFFE11D48),
+                            color: auth.isParentMode ? Colors.grey : const Color(0xFFE11D48),
                             isDark: isDark,
-                            onTap: () => Navigator.pushNamed(context, '/chat'),
+                            onTap: () {
+                              if (auth.isParentMode) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Fitur BaknusChat dinonaktifkan pada Mode Orang Tua/Wali.'),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              } else {
+                                Navigator.pushNamed(context, '/chat');
+                              }
+                            },
                           ),
                           _buildServiceButton(
                             title: 'BaknusAttend',
@@ -435,7 +448,7 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
                       const SizedBox(height: 20),
 
                       // ==================== FEATURED: BAKNUSCHAT BANNER ====================
-                      _buildChatFeaturedCard(context, isDark, userEmail, unreadChat),
+                      _buildChatFeaturedCard(context, isDark, userEmail, unreadChat, auth.isParentMode),
                     ],
                   );
                 },
@@ -464,7 +477,7 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
   }
 
   Widget _buildChatFeaturedCard(
-      BuildContext context, bool isDark, String userEmail, int unreadChatCount) {
+      BuildContext context, bool isDark, String userEmail, int unreadChatCount, bool isParentMode) {
     return StreamBuilder<List<DirectConversationItem>>(
       stream: _chatService.getDirectConversationsStream(userEmail),
       builder: (context, snapshot) {
@@ -491,6 +504,15 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
               onTap: () {
+                if (isParentMode) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Fitur BaknusChat dinonaktifkan pada Mode Orang Tua/Wali.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
                 if (lastConvo != null) {
                   Navigator.pushNamed(
                     context,
@@ -557,7 +579,7 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
                                     child: Text(
                                       unreadChatCount > 0
                                           ? '$unreadChatCount Pesan Baru'
-                                          : 'Pesan 24 Jam',
+                                          : 'Obrolan Sekolah',
                                       style: TextStyle(
                                         color: unreadChatCount > 0
                                             ? Colors.white

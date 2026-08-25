@@ -18,6 +18,7 @@ class AuthProvider extends ChangeNotifier {
   UserAccount? _currentUser;
   AuthStatus _status = AuthStatus.initial;
   String? _errorMessage;
+  bool _isParentMode = false;
 
   AuthProvider(this._storageService, this._imapService, this._apiService, this._fcmService) {
     _initAuth();
@@ -27,8 +28,16 @@ class AuthProvider extends ChangeNotifier {
   AuthStatus get status => _status;
   bool get isAuthenticated => _status == AuthStatus.authenticated && _currentUser != null;
   String? get errorMessage => _errorMessage;
+  bool get isParentMode => _isParentMode;
+
+  Future<void> setParentMode(bool isParent) async {
+    _isParentMode = isParent;
+    await _storageService.setParentMode(isParent);
+    notifyListeners();
+  }
 
   void _initAuth() {
+    _isParentMode = _storageService.isParentMode();
     final savedUser = _storageService.getUser();
     if (savedUser != null) {
       final cachedAvatar = _storageService.getUserAvatar(savedUser.email);
@@ -129,7 +138,7 @@ class AuthProvider extends ChangeNotifier {
       final quotaTotal = int.tryParse(mbox?['quota']?.toString() ?? '3221225472') ?? 3221225472;
       final msgCount = int.tryParse(mbox?['messages']?.toString() ?? '0') ?? 0;
 
-      if (imapSuccess || (mbox != null && mbox['active'] == 1)) {
+      if (imapSuccess) {
         final user = UserAccount(
           email: fullEmail,
           displayName: realName,
@@ -150,7 +159,7 @@ class AuthProvider extends ChangeNotifier {
       } else {
         _status = AuthStatus.error;
         _errorMessage =
-            'Autentikasi gagal. Pastikan email dan password server Mailcow benar.';
+            'Autentikasi gagal. Password yang Anda masukkan salah atau tidak cocok dengan akun Mailcow.';
         notifyListeners();
         return false;
       }

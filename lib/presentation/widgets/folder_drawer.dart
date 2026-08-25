@@ -263,7 +263,10 @@ class FolderDrawer extends StatelessWidget {
             // Bottom Actions: Portal, Chat, Settings, Logout
             ListTile(
               dense: true,
-              leading: const Icon(Icons.chat_bubble_rounded, color: Color(0xFFE11D48)),
+              leading: Icon(
+                Icons.chat_bubble_rounded,
+                color: auth.isParentMode ? Colors.grey : const Color(0xFFE11D48),
+              ),
               title: Row(
                 children: [
                   const Text(
@@ -274,28 +277,37 @@ class FolderDrawer extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE11D48).withValues(alpha: 0.15),
+                      color: (auth.isParentMode ? Colors.grey : const Color(0xFFE11D48)).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Text(
-                      'Chat 24J',
+                    child: Text(
+                      auth.isParentMode ? 'Off (Ortu)' : 'Chat 24J',
                       style: TextStyle(
                         fontSize: 9.5,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFFE11D48),
+                        color: auth.isParentMode ? Colors.grey : const Color(0xFFE11D48),
                       ),
                     ),
                   ),
                 ],
               ),
-              subtitle: const Text(
-                'Obrolan Pribadi Guru, TU & Siswa',
-                style: TextStyle(fontSize: 11),
+              subtitle: Text(
+                auth.isParentMode ? 'Dinonaktifkan untuk Mode Orang Tua' : 'Obrolan Pribadi Guru, TU & Siswa',
+                style: const TextStyle(fontSize: 11),
               ),
               trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.pushNamed(context, '/chat');
+                if (auth.isParentMode) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Fitur BaknusChat dinonaktifkan pada Mode Orang Tua/Wali.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } else {
+                  Navigator.pushNamed(context, '/chat');
+                }
               },
             ),
 
