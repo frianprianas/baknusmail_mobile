@@ -3817,16 +3817,20 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> with WidgetsBinding
                   title: Text(message.isStarredBy(currentEmail) ? 'Hapus Bintang' : 'Beri Bintang'),
                   onTap: () {
                     Navigator.pop(ctx);
-                    final roomId = _activeCustomGroup != null
-                        ? _activeCustomGroup!.id
-                        : (_activeDirectPeerEmail != null
-                            ? ChatService.getPrivateRoomId(currentEmail, _activeDirectPeerEmail!)
-                            : message.roomId);
-                    _chatService.toggleStarMessage(
-                      roomId: roomId,
-                      messageId: message.id,
-                      userEmail: currentEmail,
-                    );
+                    final roomId = message.roomId.isNotEmpty
+                        ? message.roomId
+                        : (_activeCustomGroup != null
+                            ? _activeCustomGroup!.id
+                            : (_activeDirectPeerEmail != null
+                                ? ChatService.getPrivateRoomId(currentEmail, _activeDirectPeerEmail!)
+                                : ''));
+                    if (roomId.isNotEmpty) {
+                      _chatService.toggleStarMessage(
+                        roomId: roomId,
+                        messageId: message.id,
+                        userEmail: currentEmail,
+                      );
+                    }
                   },
                 ),
                 ListTile(

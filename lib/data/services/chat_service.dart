@@ -1368,14 +1368,17 @@ class ChatService {
 
     return _firestore
         .collectionGroup('messages')
-        .where('starredBy', arrayContains: cleanEmail)
         .snapshots()
         .map((snapshot) {
       final list = snapshot.docs
           .map((doc) => ChatMessage.fromFirestore(doc))
+          .where((m) => m.isStarredBy(cleanEmail))
           .toList();
       list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       return list;
+    }).handleError((e) {
+      debugPrint('Error in getStarredMessagesStream: $e');
+      return <ChatMessage>[];
     });
   }
 

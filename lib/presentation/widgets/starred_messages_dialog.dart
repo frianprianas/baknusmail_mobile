@@ -102,6 +102,19 @@ class StarredMessagesDialog extends StatelessWidget {
                   return const Center(child: CircularProgressIndicator());
                 }
 
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Text(
+                        'Gagal memuat pesan berbintang: ${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.red, fontSize: 13),
+                      ),
+                    ),
+                  );
+                }
+
                 final messages = snapshot.data ?? [];
                 if (messages.isEmpty) {
                   return Center(
