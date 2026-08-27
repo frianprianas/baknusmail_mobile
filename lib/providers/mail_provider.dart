@@ -20,6 +20,7 @@ class MailProvider extends ChangeNotifier {
   FolderInfo _currentFolder = FolderInfo.getDefaultFolders().first;
   List<EmailMessage> _emails = [];
   bool _isLoading = false;
+  bool _isSyncing = false;
   bool _isFetchingMore = false;
   String? _errorMessage;
 
@@ -41,6 +42,7 @@ class MailProvider extends ChangeNotifier {
   FolderInfo get currentFolder => _currentFolder;
   List<EmailMessage> get emails => _emails;
   bool get isLoading => _isLoading;
+  bool get isSyncing => _isSyncing;
   bool get isFetchingMore => _isFetchingMore;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
@@ -127,30 +129,42 @@ class MailProvider extends ChangeNotifier {
   }
 
   Future<void> loadFoldersAndEmails() async {
-    _isLoading = true;
     _errorMessage = null;
+
+    final currentUserEmail = _authProvider.currentUser?.email;
+    final currentUserPassword = _authProvider.currentUser?.password;
+
+    // Load cached data immediately if memory is empty
+    if (_emails.isEmpty) {
+      final cached = _storageService.getCachedEmails(_currentFolder.path, userEmail: currentUserEmail);
+      if (cached.isNotEmpty) {
+        _emails = cached;
+        _sortEmailsByDate();
+        _updateFolderCounts();
+      }
+    }
+
+    // Show full screen spinner ONLY if we have literally zero emails to display
+    if (_emails.isEmpty) {
+      _isLoading = true;
+    } else {
+      _isLoading = false;
+    }
+    notifyListeners();
+
+    // Prevent duplicate concurrent sync operations
+    if (_isSyncing) return;
+    _isSyncing = true;
     notifyListeners();
 
     try {
       if (_authProvider.currentUser?.isDemo == true) {
-        // Load demo data
         _emails = DemoDataService.getDemoEmails();
         _sortEmailsByDate();
         _updateFolderCounts();
       } else {
-        final currentUserEmail = _authProvider.currentUser?.email;
-        final currentUserPassword = _authProvider.currentUser?.password;
-
-        // Load cached first for this specific user
-        final cached = _storageService.getCachedEmails(_currentFolder.path, userEmail: currentUserEmail);
-        _emails = cached;
-        _sortEmailsByDate();
-        _updateFolderCounts();
-
-        // Auto-reconnect IMAP if disconnected with saved credentials
         final isConnected = await _imapService.ensureConnected(currentUserEmail, currentUserPassword);
 
-        // Fetch from IMAP
         if (isConnected || _imapService.isConnected) {
           final folders = await _imapService.listFolders();
           if (folders.isNotEmpty) {
@@ -161,17 +175,12 @@ class MailProvider extends ChangeNotifier {
             folderPath: targetPath,
             count: 30,
           );
-          if (fetched.isNotEmpty || cached.isEmpty) {
+          if (fetched.isNotEmpty || _emails.isEmpty) {
             _emails = fetched;
           }
           _sortEmailsByDate();
           await _storageService.cacheEmails(_currentFolder.path, _emails, userEmail: currentUserEmail);
           _updateFolderCounts();
-        } else {
-          // If not connected and no cache, clear emails
-          if (cached.isEmpty) {
-            _emails = [];
-          }
         }
         _sortEmailsByDate();
         _updateFolderCounts();
@@ -180,20 +189,35 @@ class MailProvider extends ChangeNotifier {
       _errorMessage = 'Gagal memuat email: $e';
     } finally {
       _isLoading = false;
+      _isSyncing = false;
       notifyListeners();
     }
   }
 
   Future<void> loadEmailsForCurrentFolder() async {
-    _isLoading = true;
+    final email = _authProvider.currentUser?.email;
+    final password = _authProvider.currentUser?.password;
+
+    // Load folder cache immediately
+    final cached = _storageService.getCachedEmails(_currentFolder.path, userEmail: email);
+    if (cached.isNotEmpty) {
+      _emails = cached;
+      _sortEmailsByDate();
+      _updateFolderCounts();
+      _isLoading = false;
+    } else if (_emails.isEmpty) {
+      _isLoading = true;
+    }
+    notifyListeners();
+
+    if (_isSyncing) return;
+    _isSyncing = true;
     notifyListeners();
 
     try {
       if (_authProvider.currentUser?.isDemo == true) {
         // Demo emails already in memory
       } else {
-        final email = _authProvider.currentUser?.email;
-        final password = _authProvider.currentUser?.password;
         if (await _imapService.ensureConnected(email, password)) {
           final targetPath = _currentFolder.type == FolderType.starred ? 'INBOX' : _currentFolder.path;
           final fetched = await _imapService.fetchMessages(
@@ -213,6 +237,7 @@ class MailProvider extends ChangeNotifier {
       _errorMessage = 'Gagal memuat folder: $e';
     } finally {
       _isLoading = false;
+      _isSyncing = false;
       notifyListeners();
     }
   }

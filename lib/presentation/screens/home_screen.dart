@@ -221,11 +221,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
         ),
 
+        // Background sync progress indicator
+        if (mail.isSyncing && emails.isNotEmpty)
+          const LinearProgressIndicator(
+            backgroundColor: Colors.transparent,
+            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+            minHeight: 2,
+          ),
+
         // Email List / States
         Expanded(
           child: RefreshIndicator(
             onRefresh: () => mail.loadFoldersAndEmails(),
-            child: mail.isLoading
+            child: (mail.isLoading && emails.isEmpty)
                 ? const Center(
                     child: SpinKitFadingCircle(
                       color: AppColors.primary,
