@@ -15,10 +15,24 @@ class PendingNotificationTarget {
 }
 
 class FCMService {
-  final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
+  FirebaseMessaging? get _firebaseMessaging {
+    try {
+      return FirebaseMessaging.instance;
+    } catch (_) {
+      return null;
+    }
+  }
+
   final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  FirebaseFirestore? get _firestore {
+    try {
+      return FirebaseFirestore.instance;
+    } catch (_) {
+      return null;
+    }
+  }
 
   static PendingNotificationTarget? pendingTarget;
   String? _currentRegisteredEmail;
@@ -32,7 +46,7 @@ class FCMService {
     }
 
     try {
-      final initialMsg = await _firebaseMessaging.getInitialMessage();
+      final initialMsg = await _firebaseMessaging?.getInitialMessage();
       if (initialMsg != null) {
         return _extractTargetFromRemoteMessage(initialMsg);
       }
@@ -126,30 +140,36 @@ class FCMService {
   }
 
   Future<void> init() async {
-    // 1. Minta izin notifikasi
-    NotificationSettings settings = await _firebaseMessaging.requestPermission(
-      alert: true,
-      announcement: false,
-      badge: true,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
-      sound: true,
-    );
+    final messaging = _firebaseMessaging;
+    // 1. Minta izin notifikasi jika FCM tersedia
+    if (messaging != null) {
+      try {
+        NotificationSettings settings = await messaging.requestPermission(
+          alert: true,
+          announcement: false,
+          badge: true,
+          carPlay: false,
+          criticalAlert: false,
+          provisional: false,
+          sound: true,
+        );
 
-    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      debugPrint('User granted permission');
-    } else {
-      debugPrint('User declined or has not accepted permission');
-    }
+        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+          debugPrint('User granted permission');
+        } else {
+          debugPrint('User declined or has not accepted permission');
+        }
 
-    // Listener otomatis jika token FCM mengalami penyegaran (refresh)
-    _firebaseMessaging.onTokenRefresh.listen((newToken) {
-      if (_currentRegisteredEmail != null && _currentRegisteredEmail!.isNotEmpty) {
-        debugPrint('FCM token refreshed, re-registering for $_currentRegisteredEmail');
-        registerToken(_currentRegisteredEmail!);
+        messaging.onTokenRefresh.listen((newToken) {
+          if (_currentRegisteredEmail != null && _currentRegisteredEmail!.isNotEmpty) {
+            debugPrint('FCM token refreshed, re-registering for $_currentRegisteredEmail');
+            registerToken(_currentRegisteredEmail!);
+          }
+        });
+      } catch (e) {
+        debugPrint('Warning: FCM permission request failed: $e');
       }
-    });
+    }
 
     // 2. Setup Local Notifications untuk menangani notifikasi saat aplikasi dibuka (foreground)
     const AndroidInitializationSettings initializationSettingsAndroid =
@@ -211,35 +231,39 @@ class FCMService {
       );
     }
 
-    // 3. Dengarkan notifikasi saat aplikasi dibuka (foreground)
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-      debugPrint('Got a message whilst in the foreground!');
-      debugPrint('Message data: ${message.data}');
+    // 3. Dengarkan notifikasi jika messaging tersedia
+    if (messaging != null) {
+      try {
+        FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+          debugPrint('Got a message whilst in the foreground!');
+          debugPrint('Message data: ${message.data}');
 
-      final route = message.data['route']?.toString() ?? '';
-      if (route != '/chat') {
-        final mailProvider = navigatorKey.currentContext?.read<MailProvider>();
-        if (mailProvider != null) {
-          mailProvider.loadFoldersAndEmails().catchError((_) {});
-        }
-      }
+          final route = message.data['route']?.toString() ?? '';
+          if (route != '/chat') {
+            final mailProvider = navigatorKey.currentContext?.read<MailProvider>();
+            if (mailProvider != null) {
+              mailProvider.loadFoldersAndEmails().catchError((_) {});
+            }
+          }
 
-      _showLocalNotification(message);
-    });
+          _showLocalNotification(message);
+        });
 
-    // 4. Ketika notifikasi di-tap dari latar belakang (background)
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
-      debugPrint('Notification clicked from background: ${message.data}');
-      _handleNotificationTap(message, null);
-    });
+        // 4. Ketika notifikasi di-tap dari latar belakang (background)
+        FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
+          debugPrint('Notification clicked from background: ${message.data}');
+          _handleNotificationTap(message, null);
+        });
 
-    // 5. Ketika aplikasi dibuka dari kondisi mati (terminated) karena notifikasi di-tap
-    _firebaseMessaging.getInitialMessage().then((RemoteMessage? message) {
-      if (message != null) {
-        debugPrint('App launched from terminated notification: ${message.data}');
-        _handleNotificationTap(message, null);
-      }
-    });
+        // 5. Ketika aplikasi dibuka dari kondisi mati (terminated) karena notifikasi di-tap
+        messaging.getInitialMessage().then((RemoteMessage? message) {
+          if (message != null) {
+            debugPrint('App launched from terminated notification: ${message.data}');
+            _handleNotificationTap(message, null);
+          }
+        });
+      } catch (_) {}
+    }
   }
 
   // Menampilkan notifikasi background
@@ -494,15 +518,19 @@ class FCMService {
 
   // Mendapatkan token dan menyimpannya ke Firestore (dipanggil saat login, mendukung multi-device)
   Future<void> registerToken(String email) async {
+    final messaging = _firebaseMessaging;
+    final firestore = _firestore;
+    if (messaging == null || firestore == null) return;
+
     final cleanEmail = email.toLowerCase().trim();
     if (cleanEmail.isEmpty) return;
     _currentRegisteredEmail = cleanEmail;
 
     try {
-      String? token = await _firebaseMessaging.getToken();
+      String? token = await messaging.getToken();
       if (token != null) {
         debugPrint('FCM Token: $token');
-        await _firestore
+        await firestore
             .collection('user_tokens')
             .doc(cleanEmail)
             .set({
@@ -520,14 +548,18 @@ class FCMService {
 
   // Menghapus token dari Firestore (dipanggil saat logout)
   Future<void> unregisterToken(String email) async {
+    final messaging = _firebaseMessaging;
+    final firestore = _firestore;
+    if (messaging == null || firestore == null) return;
+
     final cleanEmail = email.toLowerCase().trim();
     if (cleanEmail.isEmpty) return;
     _currentRegisteredEmail = null;
 
     try {
-      String? token = await _firebaseMessaging.getToken();
+      String? token = await messaging.getToken();
       if (token != null) {
-        await _firestore
+        await firestore
             .collection('user_tokens')
             .doc(cleanEmail)
             .update({
@@ -535,13 +567,13 @@ class FCMService {
             })
             .timeout(const Duration(seconds: 10));
       } else {
-        await _firestore
+        await firestore
             .collection('user_tokens')
             .doc(cleanEmail)
             .delete()
             .timeout(const Duration(seconds: 10));
       }
-      await _firebaseMessaging.deleteToken();
+      await messaging.deleteToken();
       debugPrint('Token unregistered for $cleanEmail');
     } catch (e) {
       debugPrint('Warning: Error unregistering FCM token: $e');

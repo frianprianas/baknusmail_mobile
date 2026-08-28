@@ -54,15 +54,25 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeDateFormatting('id_ID', null);
 
-  final fcmService = FCMService();
+  try {
+    await initializeDateFormatting('id_ID', null);
+  } catch (e) {
+    debugPrint("Locale formatting init warning: $e");
+  }
+
   try {
     await Firebase.initializeApp();
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  } catch (e) {
+    debugPrint("Firebase init warning: $e");
+  }
+
+  final fcmService = FCMService();
+  try {
     await fcmService.init();
   } catch (e) {
-    debugPrint("Firebase/FCM init warning (dapat diabaikan di web jika tanpa firebase_options): $e");
+    debugPrint("FCM init warning: $e");
   }
 
   // Initialize storage
