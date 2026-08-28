@@ -9559,7 +9559,7 @@ case 15:s=17
 return A.h(A.aMX(),$async$HM)
 case 17:j=a8
 i=new A.a1m(A.b([],t.H7))
-h=A.bzr("https://mail.smk.baktinusantara666.sch.id",B.eJ,A.E(["X-API-Key","925B68-0FF6BB-36B760-F6C051-AAF343","Content-Type","application/json","Accept","application/json"],t.N,t.z),B.eJ)
+h=A.bzr("",B.eJ,A.E(["X-API-Key","925B68-0FF6BB-36B760-F6C051-AAF343","Content-Type","application/json","Accept","application/json"],t.N,t.z),B.eJ)
 g=new A.a0q(A.b([B.a4g],t.i6))
 g.H(g,B.arG)
 g=new A.apO($,g,$,new A.av2(51200),!1)

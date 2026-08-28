@@ -10,7 +10,7 @@ class MailcowApiService {
   MailcowApiService() {
     _dio = Dio(
       BaseOptions(
-        baseUrl: MailcowConfig.apiUrl,
+        baseUrl: kIsWeb ? '' : MailcowConfig.apiUrl,
         headers: {
           'X-API-Key': MailcowConfig.apiKey,
           'Content-Type': 'application/json',
