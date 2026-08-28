@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../data/models/email_message.dart';
 import '../data/models/folder_info.dart';
 import '../data/models/attachment_item.dart';
@@ -158,10 +159,12 @@ class MailProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      if (_authProvider.currentUser?.isDemo == true) {
-        _emails = DemoDataService.getDemoEmails();
-        _sortEmailsByDate();
-        _updateFolderCounts();
+      if (_authProvider.currentUser?.isDemo == true || kIsWeb) {
+        if (_emails.isEmpty) {
+          _emails = DemoDataService.getDemoEmails();
+          _sortEmailsByDate();
+          _updateFolderCounts();
+        }
       } else {
         final isConnected = await _imapService.ensureConnected(currentUserEmail, currentUserPassword);
 
@@ -215,8 +218,12 @@ class MailProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      if (_authProvider.currentUser?.isDemo == true) {
-        // Demo emails already in memory
+      if (_authProvider.currentUser?.isDemo == true || kIsWeb) {
+        if (_emails.isEmpty) {
+          _emails = DemoDataService.getDemoEmails();
+          _sortEmailsByDate();
+          _updateFolderCounts();
+        }
       } else {
         if (await _imapService.ensureConnected(email, password)) {
           final targetPath = _currentFolder.type == FolderType.starred ? 'INBOX' : _currentFolder.path;

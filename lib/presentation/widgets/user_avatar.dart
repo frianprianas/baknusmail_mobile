@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../../core/config/mailcow_config.dart';
 import '../../core/theme/app_colors.dart';
@@ -63,7 +64,7 @@ class UserAvatar extends StatelessWidget {
       }
     }
 
-    if (cleanEmail.isEmpty) {
+    if (cleanEmail.isEmpty || kIsWeb) {
       return _buildInitialsAvatar(avatarColor, initials);
     }
 
