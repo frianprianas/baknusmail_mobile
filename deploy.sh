@@ -30,7 +30,7 @@ fi
 if [ ! -d "build/web" ]; then
     echo "📦 Folder build/web tidak ditemukan. Membangun Flutter Web..."
     if command -v flutter &> /dev/null; then
-        flutter build web --release
+        flutter build web --release --pwa-strategy=none
     else
         echo "❌ Error: Flutter SDK tidak ditemukan di server dan folder build/web belum tersedia."
         echo "Silakan jalankan 'flutter build web --release' di lokal lalu upload folder build/web ke server."
