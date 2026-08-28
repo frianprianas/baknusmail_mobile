@@ -5,18 +5,27 @@ import '../../data/services/chat_service.dart';
 
 class StarredMessagesDialog extends StatelessWidget {
   final String userEmail;
+  final Function(ChatMessage msg)? onMessageTap;
 
   const StarredMessagesDialog({
     super.key,
     required this.userEmail,
+    this.onMessageTap,
   });
 
-  static void show(BuildContext context, {required String userEmail}) {
+  static void show(
+    BuildContext context, {
+    required String userEmail,
+    Function(ChatMessage msg)? onMessageTap,
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => StarredMessagesDialog(userEmail: userEmail),
+      builder: (ctx) => StarredMessagesDialog(
+        userEmail: userEmail,
+        onMessageTap: onMessageTap,
+      ),
     );
   }
 
@@ -162,78 +171,116 @@ class StarredMessagesDialog extends StatelessWidget {
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final msg = messages[index];
-                    return Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: isDark ? AppColors.darkSurfaceElevated : AppColors.lightSurfaceElevated,
+                    return Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.pop(context);
+                          onMessageTap?.call(msg);
+                        },
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.darkSurfaceElevated : AppColors.lightSurfaceElevated,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                msg.senderName,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFE11D48).withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  msg.senderRole,
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    color: Color(0xFFE11D48),
-                                    fontWeight: FontWeight.w600,
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            msg.senderName,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFE11D48).withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            msg.senderRole,
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              color: Color(0xFFE11D48),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
+                                  Text(
+                                    msg.timeFormatted,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    constraints: const BoxConstraints(),
+                                    padding: EdgeInsets.zero,
+                                    icon: const Icon(Icons.star_rounded, color: Colors.amber, size: 20),
+                                    tooltip: 'Hapus Bintang',
+                                    onPressed: () {
+                                      chatService.toggleStarMessage(
+                                        roomId: msg.roomId,
+                                        messageId: msg.id,
+                                        userEmail: userEmail,
+                                      );
+                                    },
+                                  ),
+                                ],
                               ),
-                              const Spacer(),
+                              const SizedBox(height: 8),
                               Text(
-                                msg.timeFormatted,
+                                msg.text,
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: 11,
-                                  color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                                  fontSize: 13,
+                                  color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                                 ),
                               ),
-                              const SizedBox(width: 4),
-                              IconButton(
-                                constraints: const BoxConstraints(),
-                                padding: EdgeInsets.zero,
-                                icon: const Icon(Icons.star_rounded, color: Colors.amber, size: 20),
-                                tooltip: 'Hapus Bintang',
-                                onPressed: () {
-                                  chatService.toggleStarMessage(
-                                    roomId: msg.roomId,
-                                    messageId: msg.id,
-                                    userEmail: userEmail,
-                                  );
-                                },
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    'Buka Percakapan',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: Theme.of(context).primaryColor,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    Icons.arrow_forward_ios_rounded,
+                                    size: 10,
+                                    color: Theme.of(context).primaryColor,
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            msg.text,
-                            maxLines: 4,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     );
                   },

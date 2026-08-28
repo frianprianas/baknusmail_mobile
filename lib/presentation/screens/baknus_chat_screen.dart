@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
@@ -33,6 +34,9 @@ import '../widgets/starred_messages_dialog.dart';
 import '../widgets/baknus_drive_picker_dialog.dart';
 import '../widgets/forward_message_dialog.dart';
 import '../widgets/chat_backup_dialog.dart';
+import '../widgets/linked_devices_dialog.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../core/utils/format_helper.dart';
 import '../../data/models/jamendo_music.dart';
 import '../widgets/jamendo_music_picker_dialog.dart';
@@ -66,6 +70,10 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> with WidgetsBinding
   String? _activeDirectPeerTag;
   CustomGroup? _activeCustomGroup;
   int _selectedMainTabIndex = 0; // 0: Japri, 1: Grup, 2: Status
+
+  // State untuk BaknusChat Web QR pairing
+  String? _webSessionId;
+  BaknusWebSession? _authenticatedWebSession;
 
   Map<String, dynamic>? _liveMailboxData;
   bool _isSending = false;
@@ -349,10 +357,87 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> with WidgetsBinding
       _chatService.markConversationAsRead(userEmail, cleanPeer);
     }
     setState(() {
+      _activeCustomGroup = null;
       _activeDirectPeerEmail = cleanPeer;
       _activeDirectPeerName = peerName;
       _activeDirectPeerTag = peerTag;
     });
+  }
+
+  Future<void> _openStarredMessageRoom(ChatMessage msg) async {
+    final auth = context.read<AuthProvider>();
+    final userEmail = (auth.currentUser?.email ?? '').toLowerCase().trim();
+
+    if (msg.roomId == 'publik' || msg.roomId.isEmpty) {
+      setState(() {
+        _activeDirectPeerEmail = null;
+        _activeCustomGroup = null;
+      });
+      return;
+    }
+
+    if (!msg.roomId.startsWith('dm_') && !msg.roomId.startsWith('private_')) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('baknus_custom_groups')
+            .doc(msg.roomId)
+            .get();
+        if (doc.exists) {
+          final group = CustomGroup.fromFirestore(doc);
+          setState(() {
+            _activeDirectPeerEmail = null;
+            _activeCustomGroup = group;
+          });
+          return;
+        }
+      } catch (e) {
+        debugPrint('Error opening starred group: $e');
+      }
+      setState(() {
+        _activeDirectPeerEmail = null;
+        _activeCustomGroup = null;
+      });
+      return;
+    }
+
+    String peerEmail = '';
+    String peerName = 'Pengguna';
+    String peerTag = 'Siswa';
+
+    final senderClean = msg.senderEmail.toLowerCase().trim();
+    if (senderClean.isNotEmpty && senderClean != userEmail) {
+      peerEmail = senderClean;
+      peerName = msg.senderName;
+      peerTag = msg.senderRole;
+    } else {
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('baknus_chat_direct_conversations')
+            .doc(userEmail)
+            .collection('peers')
+            .get();
+
+        for (final doc in snap.docs) {
+          final pEmail = (doc.data()['peerEmail']?.toString() ?? doc.id).toLowerCase().trim();
+          if (ChatService.getPrivateRoomId(userEmail, pEmail) == msg.roomId) {
+            peerEmail = pEmail;
+            peerName = doc.data()['peerName']?.toString() ?? pEmail.split('@').first;
+            peerTag = doc.data()['peerTag']?.toString() ?? 'Siswa';
+            break;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error looking up peer for starred DM: $e');
+      }
+    }
+
+    if (peerEmail.isNotEmpty) {
+      _openDirectChat(
+        peerEmail: peerEmail,
+        peerName: peerName,
+        peerTag: peerTag,
+      );
+    }
   }
 
   Future<void> _handleSendMessage({
@@ -1315,6 +1400,14 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> with WidgetsBinding
       fallbackRole: baknus.userRole,
     );
 
+    // Jika dibuka di browser web dan belum diautentikasi lewat QR Mobile
+    if (kIsWeb && _authenticatedWebSession == null && userEmail.isEmpty) {
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: _buildWebQrLoginScreen(isDark),
+      );
+    }
+
     final isInsideRoom = _activeDirectPeerEmail != null || _activeCustomGroup != null;
 
     return AppBackground(
@@ -1501,8 +1594,189 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> with WidgetsBinding
     );
   }
 
+  void _initWebQrSession() {
+    if (_webSessionId != null) return;
+    _chatService.createWebQrSession().then((id) {
+      if (mounted) {
+        setState(() {
+          _webSessionId = id;
+        });
+      }
+    });
+  }
+
+  Widget _buildWebQrLoginScreen(bool isDark) {
+    if (_webSessionId == null) {
+      _initWebQrSession();
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return StreamBuilder<BaknusWebSession?>(
+      stream: _chatService.streamWebQrSession(_webSessionId!),
+      builder: (context, snapshot) {
+        final session = snapshot.data;
+
+        if (session != null && session.status == 'authenticated' && session.userEmail != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_authenticatedWebSession?.sessionId != session.sessionId) {
+              setState(() {
+                _authenticatedWebSession = session;
+              });
+            }
+          });
+        }
+
+        if (session != null && (session.status == 'expired' || session.status == 'revoked')) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            setState(() {
+              _webSessionId = null;
+            });
+          });
+        }
+
+        return Container(
+          color: isDark ? const Color(0xFF111B21) : const Color(0xFFF0F2F5),
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 860),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF202C33) : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(40),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Image.asset('assets/images/app_logo.png', width: 44, height: 44),
+                              const SizedBox(width: 12),
+                              Text(
+                                'BaknusChat Web',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 32),
+                          Text(
+                            'Gunakan BaknusChat di Komputer Anda:',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.lightTextPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          _buildInstructionStep('1', 'Buka aplikasi BaknusID di HP Anda'),
+                          const SizedBox(height: 12),
+                          _buildInstructionStep('2', 'Ketuk Menu [⋮] di pojok kanan atas BaknusChat'),
+                          const SizedBox(height: 12),
+                          _buildInstructionStep('3', 'Pilih Perangkat Tertaut lalu ketuk Tautkan Perangkat'),
+                          const SizedBox(height: 12),
+                          _buildInstructionStep('4', 'Arahkan kamera HP ke layar ini untuk melakukan scan'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 40),
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.grey.shade300, width: 2),
+                            ),
+                            child: QrImageView(
+                              data: _webSessionId!,
+                              version: QrVersions.auto,
+                              size: 220.0,
+                              backgroundColor: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.sync_rounded, size: 14, color: Colors.grey),
+                              const SizedBox(width: 6),
+                              Text(
+                                'QR Code memperbarui secara real-time',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInstructionStep(String stepNumber, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: Color(0xFFE11D48),
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            stepNumber,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 14, height: 1.4),
+          ),
+        ),
+      ],
+    );
+  }
+
   PreferredSizeWidget _buildStandardAppBar(bool isDark, String userTag, String userEmail) {
     final tagColor = UserTagResolver.getTagColor(userTag);
+    final auth = context.read<AuthProvider>();
+    final rawDisplayName = auth.currentUser?.displayName.isNotEmpty == true
+        ? auth.currentUser!.displayName
+        : (userEmail.isNotEmpty ? userEmail.split('@').first : 'Pengguna');
 
     return AppBar(
       backgroundColor: Colors.transparent,
@@ -1585,17 +1859,38 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> with WidgetsBinding
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           onSelected: (value) {
             if (value == 'starred') {
-              StarredMessagesDialog.show(context, userEmail: userEmail);
+              StarredMessagesDialog.show(
+                context,
+                userEmail: userEmail,
+                onMessageTap: (msg) => _openStarredMessageRoom(msg),
+              );
             } else if (value == 'create_group') {
               CreateGroupDialog.show(
                 context,
                 onGroupCreated: () => setState(() {}),
+              );
+            } else if (value == 'linked_devices') {
+              LinkedDevicesDialog.show(
+                context,
+                userEmail: userEmail,
+                userName: rawDisplayName,
+                userRole: userTag,
               );
             } else if (value == 'info') {
               _showInfoDialog(userTag);
             }
           },
           itemBuilder: (ctx) => [
+            const PopupMenuItem(
+              value: 'linked_devices',
+              child: Row(
+                children: [
+                  Icon(Icons.devices_rounded, color: Color(0xFF10B981), size: 20),
+                  SizedBox(width: 10),
+                  Text('Perangkat Tertaut'),
+                ],
+              ),
+            ),
             const PopupMenuItem(
               value: 'starred',
               child: Row(
@@ -2032,6 +2327,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> with WidgetsBinding
                             currentEmail: currentEmail,
                             peerEmail: item.peerEmail,
                             peerName: item.peerName,
+                            isPinned: item.isPinned,
                           );
                         },
                         child: Container(
@@ -2160,6 +2456,14 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> with WidgetsBinding
                                             ],
                                           ),
                                         ),
+                                        if (item.isPinned) ...[
+                                          const Icon(
+                                            Icons.push_pin_rounded,
+                                            size: 14,
+                                            color: Colors.amber,
+                                          ),
+                                          const SizedBox(width: 4),
+                                        ],
                                         const Icon(
                                           Icons.arrow_forward_ios_rounded,
                                           size: 12,
@@ -3907,6 +4211,7 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> with WidgetsBinding
     required String currentEmail,
     required String peerEmail,
     required String peerName,
+    bool isPinned = false,
   }) {
     showModalBottomSheet(
       context: context,
@@ -3927,6 +4232,60 @@ class _BaknusChatScreenState extends State<BaknusChatScreen> with WidgetsBinding
                   peerName: peerName,
                   peerTag: UserTagResolver.resolve(email: peerEmail, displayName: peerName),
                 );
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                isPinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
+                color: Colors.amber[700],
+              ),
+              title: Text(isPinned ? 'Lepas Pin Percakapan' : 'Sematkan (Pin) Percakapan Ini'),
+              subtitle: Text(
+                isPinned
+                    ? 'Lepaskan sematan percakapan dari posisi paling atas'
+                    : 'Sematkan di posisi paling atas (Maksimal 3 percakapan)',
+              ),
+              onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                Navigator.pop(ctx);
+                final success = await _chatService.togglePinConversation(
+                  userEmail: currentEmail,
+                  peerEmail: peerEmail,
+                  isPinned: !isPinned,
+                );
+
+                if (!mounted) return;
+                if (!success && !isPinned) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: const Row(
+                        children: [
+                          Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text('Maksimal 3 percakapan yang dapat disematkan (pin).'),
+                          ),
+                        ],
+                      ),
+                      backgroundColor: Colors.amber[800],
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  );
+                } else {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        !isPinned
+                            ? 'Percakapan dengan $peerName berhasil disematkan di paling atas.'
+                            : 'Sematan percakapan dengan $peerName telah dilepas.',
+                      ),
+                      duration: const Duration(seconds: 2),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  );
+                }
               },
             ),
             ListTile(

@@ -126,6 +126,12 @@ class ChatMessage {
       }
     }
 
+    String? rId = data['roomId']?.toString();
+    if (rId == null || rId.isEmpty) {
+      rId = doc.reference.parent.parent?.id;
+    }
+    final finalRoomId = (rId != null && rId.isNotEmpty) ? rId : 'publik';
+
     return ChatMessage(
       id: doc.id,
       senderEmail: data['senderEmail']?.toString() ?? '',
@@ -134,7 +140,7 @@ class ChatMessage {
       text: data['text']?.toString() ?? '',
       timestamp: createdAt,
       expiresAt: expireTime,
-      roomId: data['roomId']?.toString() ?? 'publik',
+      roomId: finalRoomId,
       isRead: isReadVal,
       readAt: readTime,
       isPending: false,

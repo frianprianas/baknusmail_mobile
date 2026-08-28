@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  baknuschat-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: baknuschat_web_app
+    restart: always
+    ports:
+      - "8080:80"
+    environment:
+      - VIRTUAL_HOST=web.baknuschat.smkbn666.sch.id
+      - LETSENCRYPT_HOST=web.baknuschat.smkbn666.sch.id

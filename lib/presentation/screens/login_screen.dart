@@ -288,17 +288,24 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                                 if (!_usernameController.text.contains('@'))
                                   Padding(
-                                    padding: const EdgeInsets.only(top: 6, left: 6),
+                                    padding: const EdgeInsets.only(top: 6, left: 6, right: 6),
                                     child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        const Icon(Icons.alternate_email_rounded, size: 14, color: Color(0xFF2563EB)),
+                                        const Padding(
+                                          padding: EdgeInsets.only(top: 2),
+                                          child: Icon(Icons.alternate_email_rounded, size: 14, color: Color(0xFF2563EB)),
+                                        ),
                                         const SizedBox(width: 4),
-                                        Text(
-                                          'Domain Otomatis: @${MailcowConfig.domain}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                            color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                                        Expanded(
+                                          child: Text(
+                                            'Domain Otomatis: @smk.baktinusantara-\n666.sch.id',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              height: 1.3,
+                                              color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                                            ),
                                           ),
                                         ),
                                       ],

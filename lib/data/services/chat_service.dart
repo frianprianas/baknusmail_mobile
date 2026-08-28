@@ -13,6 +13,8 @@ class DirectConversationItem {
   final String lastMessage;
   final DateTime lastTimestamp;
   final int unreadCount;
+  final bool isPinned;
+  final DateTime? pinnedAt;
 
   DirectConversationItem({
     required this.peerEmail,
@@ -21,6 +23,8 @@ class DirectConversationItem {
     required this.lastMessage,
     required this.lastTimestamp,
     this.unreadCount = 0,
+    this.isPinned = false,
+    this.pinnedAt,
   });
 
   factory DirectConversationItem.fromMap(Map<String, dynamic> map) {
@@ -37,6 +41,8 @@ class DirectConversationItem {
       lastMessage: map['lastMessage']?.toString() ?? '',
       lastTimestamp: parseDate(map['lastTimestamp']),
       unreadCount: (map['unreadCount'] is num) ? (map['unreadCount'] as num).toInt() : 0,
+      isPinned: map['isPinned'] == true,
+      pinnedAt: map['pinnedAt'] != null ? parseDate(map['pinnedAt']) : null,
     );
   }
 
@@ -47,7 +53,55 @@ class DirectConversationItem {
         'lastMessage': lastMessage,
         'lastTimestamp': FieldValue.serverTimestamp(),
         'unreadCount': unreadCount,
+        'isPinned': isPinned,
+        'pinnedAt': pinnedAt != null ? Timestamp.fromDate(pinnedAt!) : null,
       };
+}
+
+class BaknusWebSession {
+  final String sessionId;
+  final String status; // 'pending' | 'authenticated' | 'expired' | 'revoked'
+  final DateTime createdAt;
+  final DateTime? authenticatedAt;
+  final String? userEmail;
+  final String? userName;
+  final String? userRole;
+  final String? deviceInfo;
+  final String? ipAddress;
+
+  BaknusWebSession({
+    required this.sessionId,
+    required this.status,
+    required this.createdAt,
+    this.authenticatedAt,
+    this.userEmail,
+    this.userName,
+    this.userRole,
+    this.deviceInfo,
+    this.ipAddress,
+  });
+
+  factory BaknusWebSession.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+
+    DateTime parseDate(dynamic val) {
+      if (val is Timestamp) return val.toDate();
+      if (val is String) return DateTime.tryParse(val) ?? DateTime.now();
+      return DateTime.now();
+    }
+
+    return BaknusWebSession(
+      sessionId: doc.id,
+      status: data['status']?.toString() ?? 'pending',
+      createdAt: parseDate(data['createdAt']),
+      authenticatedAt: data['authenticatedAt'] != null ? parseDate(data['authenticatedAt']) : null,
+      userEmail: data['userEmail']?.toString(),
+      userName: data['userName']?.toString(),
+      userRole: data['userRole']?.toString(),
+      deviceInfo: data['deviceInfo']?.toString(),
+      ipAddress: data['ipAddress']?.toString(),
+    );
+  }
 }
 
 class UserPresence {
@@ -91,6 +145,115 @@ class ChatService {
   static const String directConversationsCollection = 'baknus_chat_direct_conversations';
   static const String userPresenceCollection = 'baknus_user_presence';
   static const String customGroupsCollection = 'baknus_custom_groups';
+  static const String webSessionsCollection = 'baknus_web_sessions';
+
+  /// 1. Buat Web QR Session ID baru (Dipanggil oleh Web Client di web.baknuschat.smkbn666.sch.id)
+  Future<String> createWebQrSession() async {
+    final docRef = _firestore.collection(webSessionsCollection).doc();
+    final sessionId = docRef.id;
+
+    await docRef.set({
+      'sessionId': sessionId,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+      'expiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(minutes: 5))),
+    });
+
+    return sessionId;
+  }
+
+  /// 2. Stream status Web QR Session real-time (Dipanggil oleh Web Client untuk mendengarkan saat QR di-scan)
+  Stream<BaknusWebSession?> streamWebQrSession(String sessionId) {
+    if (sessionId.isEmpty) return Stream.value(null);
+    return _firestore
+        .collection(webSessionsCollection)
+        .doc(sessionId)
+        .snapshots()
+        .map((doc) => doc.exists ? BaknusWebSession.fromFirestore(doc) : null);
+  }
+
+  /// 3. Otentikasi Web QR Session oleh HP (Dipanggil setelah kamera HP berhasil scan QR Code)
+  Future<bool> authenticateWebQrSession({
+    required String sessionId,
+    required String userEmail,
+    required String userName,
+    required String userRole,
+    String deviceInfo = 'BaknusChat Web Client',
+  }) async {
+    final cleanEmail = userEmail.toLowerCase().trim();
+    if (sessionId.isEmpty || cleanEmail.isEmpty) return false;
+
+    try {
+      final docRef = _firestore.collection(webSessionsCollection).doc(sessionId);
+      final docSnap = await docRef.get();
+      if (!docSnap.exists) return false;
+
+      await docRef.update({
+        'status': 'authenticated',
+        'userEmail': cleanEmail,
+        'userName': userName,
+        'userRole': userRole,
+        'deviceInfo': deviceInfo,
+        'authenticatedAt': FieldValue.serverTimestamp(),
+      });
+
+      return true;
+    } catch (e) {
+      debugPrint('Error authenticating Web QR session: $e');
+      return false;
+    }
+  }
+
+  /// 4. Stream daftar perangkat web tertaut milik pengguna tertentu (Dipanggil di HP untuk manajemen perangkat)
+  Stream<List<BaknusWebSession>> getLinkedDevicesStream(String userEmail) {
+    final cleanEmail = userEmail.toLowerCase().trim();
+    if (cleanEmail.isEmpty) return Stream.value([]);
+
+    return _firestore
+        .collection(webSessionsCollection)
+        .where('userEmail', isEqualTo: cleanEmail)
+        .where('status', isEqualTo: 'authenticated')
+        .snapshots()
+        .map((snap) => snap.docs.map((doc) => BaknusWebSession.fromFirestore(doc)).toList());
+  }
+
+  /// 5. Revoke / Keluar dari Perangkat Tertaut tertentu (Logout Web dari HP)
+  Future<void> revokeWebSession(String sessionId) async {
+    if (sessionId.isEmpty) return;
+    try {
+      await _firestore.collection(webSessionsCollection).doc(sessionId).update({
+        'status': 'revoked',
+        'revokedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('Error revoking web session: $e');
+    }
+  }
+
+  /// 6. Revoke / Keluar dari Semua Perangkat Web Tertaut milik user
+  Future<void> revokeAllWebSessions(String userEmail) async {
+    final cleanEmail = userEmail.toLowerCase().trim();
+    if (cleanEmail.isEmpty) return;
+
+    try {
+      final snap = await _firestore
+          .collection(webSessionsCollection)
+          .where('userEmail', isEqualTo: cleanEmail)
+          .where('status', isEqualTo: 'authenticated')
+          .get();
+
+      final batch = _firestore.batch();
+      for (final doc in snap.docs) {
+        batch.update(doc.reference, {
+          'status': 'revoked',
+          'revokedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Error revoking all web sessions: $e');
+    }
+  }
 
   /// Update status presence real-time user (online/offline)
   Future<void> updateUserPresence(String userEmail, bool isOnline) async {
@@ -280,9 +443,62 @@ class ChatService {
       final list = snapshot.docs
           .map((doc) => DirectConversationItem.fromMap(doc.data()))
           .toList();
-      list.sort((a, b) => b.lastTimestamp.compareTo(a.lastTimestamp));
+      list.sort((a, b) {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        if (a.isPinned && b.isPinned) {
+          final aPinTime = a.pinnedAt ?? a.lastTimestamp;
+          final bPinTime = b.pinnedAt ?? b.lastTimestamp;
+          return bPinTime.compareTo(aPinTime);
+        }
+        return b.lastTimestamp.compareTo(a.lastTimestamp);
+      });
       return list;
     });
+  }
+
+  /// Pin atau lepas Pin percakapan Japri (Maksimal 3 percakapan)
+  Future<bool> togglePinConversation({
+    required String userEmail,
+    required String peerEmail,
+    required bool isPinned,
+  }) async {
+    final cleanUser = userEmail.toLowerCase().trim();
+    final cleanPeer = peerEmail.toLowerCase().trim();
+    if (cleanUser.isEmpty || cleanPeer.isEmpty) return false;
+
+    final docRef = _firestore
+        .collection(directConversationsCollection)
+        .doc(cleanUser)
+        .collection('peers')
+        .doc(cleanPeer);
+
+    if (isPinned) {
+      // Cek jumlah percakapan yang sudah di-pin saat ini
+      final pinnedSnap = await _firestore
+          .collection(directConversationsCollection)
+          .doc(cleanUser)
+          .collection('peers')
+          .where('isPinned', isEqualTo: true)
+          .get();
+
+      if (pinnedSnap.docs.length >= 3) {
+        // Sudah mencapai batas maksimal 3
+        return false;
+      }
+
+      await docRef.set({
+        'isPinned': true,
+        'pinnedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      return true;
+    } else {
+      await docRef.set({
+        'isPinned': false,
+        'pinnedAt': null,
+      }, SetOptions(merge: true));
+      return true;
+    }
   }
 
   /// Stream total unread chat messages count across all active conversations
