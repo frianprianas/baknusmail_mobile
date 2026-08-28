@@ -38,7 +38,12 @@ if [ ! -d "build/web" ]; then
     fi
 fi
 
-# 3. Jalankan Docker Compose
+# 3. Memastikan service Docker berjalan
+echo "⚙️ Memastikan Docker service aktif..."
+sudo systemctl start docker || true
+sudo systemctl enable docker || true
+
+# 4. Jalankan Docker Compose
 echo "🐳 Menjalankan container Docker dengan Docker Compose..."
 sudo docker compose up -d --build
 
