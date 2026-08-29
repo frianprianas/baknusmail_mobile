@@ -7,7 +7,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
-import '../../data/services/avatar_api_service.dart';
 import '../../data/services/baknus_ai_client_service.dart';
 import '../../data/services/baknusmail_profile_service.dart';
 import '../../providers/auth_provider.dart';
@@ -131,6 +130,9 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
   Future<void> _processUpload() async {
     if (_base64Image == null) return;
 
+    final auth = context.read<AuthProvider>();
+    final userEmail = auth.currentUser?.email ?? '';
+
     // 1. Cek Kuota Harian (Maksimal 2x Per Hari)
     final canUpload = await BaknusAIClientService.canChangeAvatarToday();
     if (!canUpload) {
@@ -143,9 +145,6 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
       }
       return;
     }
-
-    final auth = context.read<AuthProvider>();
-    final userEmail = auth.currentUser?.email ?? '';
 
     setState(() {
       _isProcessing = true;
