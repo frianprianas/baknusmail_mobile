@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'baknusmail_profile_service.dart';
+
 class AvatarValidationResult {
   final bool isApproved;
   final String reason;
@@ -21,7 +23,22 @@ class AvatarApiService {
       'https://baknusmail.smkbn666.sch.id/api/integration/user-profile';
   static const String internalApiKey = 'BAKNUS_SECRET_INTERNAL_KEY_999';
 
-  /// Pembaruan Profil & Verifikasi Wajah BaknusAI (Integration Endpoint)
+  /// Pembaruan Profil & Foto Profil (Default: validateAvatarWithAI = false)
+  Future<Map<String, dynamic>> updateProfile({
+    required String email,
+    String? displayName,
+    String? avatarBase64,
+    bool validateAvatarWithAI = false,
+  }) async {
+    return BaknusMailProfileService.updateProfile(
+      email: email,
+      displayName: displayName,
+      avatarBase64: avatarBase64,
+      validateWithAI: validateAvatarWithAI,
+    );
+  }
+
+  /// Pembaruan Profil & Verifikasi Wajah (Integration Endpoint)
   Future<void> processSmartAvatarUpload({
     required String jwtToken,
     required String base64Image,
@@ -29,7 +46,24 @@ class AvatarApiService {
     required Function(String statusMessage) onStatusUpdate,
     required Function(String successMessage) onSuccess,
     required Function(String errorMessage) onError,
+    bool validateAvatarWithAI = false,
   }) async {
+    if (!validateAvatarWithAI) {
+      onStatusUpdate("Mengunggah foto profil ke server...");
+      final res = await BaknusMailProfileService.updateProfile(
+        email: userEmail.isNotEmpty ? userEmail : 'user@smkbn666.sch.id',
+        avatarBase64: base64Image,
+        validateWithAI: false,
+      );
+
+      if (res['success'] == true) {
+        onSuccess(res['message'] ?? 'Foto profil berhasil diperbarui!');
+      } else {
+        onError(res['error'] ?? 'Gagal memperbarui foto profil.');
+      }
+      return;
+    }
+
     onStatusUpdate("Memeriksa foto dengan BaknusAI Online...");
 
     try {

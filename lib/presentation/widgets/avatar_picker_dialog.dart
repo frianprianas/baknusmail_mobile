@@ -1,11 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/services/avatar_api_service.dart';
+import '../../data/services/baknusmail_profile_service.dart';
 import '../../providers/auth_provider.dart';
 
 class AvatarPickerDialog extends StatefulWidget {
@@ -27,15 +30,16 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
   Uint8List? _selectedBytes;
   String? _base64Image;
   bool _isProcessing = false;
+  bool _validateWithAI = false;
   String _statusText = '';
 
-  /// Resize image bytes to 128x128 pixel & return PNG/JPEG bytes
-  Future<Uint8List> _resizeTo128(Uint8List originalBytes) async {
+  /// Resize & optimasi image bytes
+  Future<Uint8List> _optimizeImage(Uint8List originalBytes) async {
     try {
       final ui.Codec codec = await ui.instantiateImageCodec(
         originalBytes,
-        targetWidth: 128,
-        targetHeight: 128,
+        targetWidth: 400,
+        targetHeight: 400,
       );
       final ui.FrameInfo frameInfo = await codec.getNextFrame();
       final ui.Image image = frameInfo.image;
@@ -50,8 +54,39 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
     return originalBytes;
   }
 
-  /// 1. Pilih Foto dari Galeri/Perangkat
-  Future<void> _pickImage() async {
+  /// 1. Pilih Foto dari Galeri/Kamera dengan ImagePicker / FilePicker
+  Future<void> _pickImage([ImageSource source = ImageSource.gallery]) async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? pickedFile = await picker.pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+
+      if (pickedFile != null) {
+        final rawBytes = await pickedFile.readAsBytes();
+        setState(() {
+          _isProcessing = true;
+          _statusText = 'Mengompresi foto...';
+        });
+
+        final optimizedBytes = await _optimizeImage(rawBytes);
+        final base64Str = 'data:image/jpeg;base64,${base64Encode(optimizedBytes)}';
+
+        setState(() {
+          _selectedBytes = optimizedBytes;
+          _base64Image = base64Str;
+          _isProcessing = false;
+          _statusText = '';
+        });
+        return;
+      }
+    } catch (_) {
+      // Fallback ke FilePicker jika ImagePicker tidak tersedia / error
+    }
+
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
@@ -64,15 +99,14 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
         if (rawBytes != null) {
           setState(() {
             _isProcessing = true;
-            _statusText = 'Mengompresi foto ke 128x128...';
+            _statusText = 'Mengompresi foto...';
           });
 
-          // Crop & Resize ke 128x128
-          final resizedBytes = await _resizeTo128(rawBytes);
-          final base64Str = 'data:image/jpeg;base64,${base64Encode(resizedBytes)}';
+          final optimizedBytes = await _optimizeImage(rawBytes);
+          final base64Str = 'data:image/jpeg;base64,${base64Encode(optimizedBytes)}';
 
           setState(() {
-            _selectedBytes = resizedBytes;
+            _selectedBytes = optimizedBytes;
             _base64Image = base64Str;
             _isProcessing = false;
             _statusText = '';
@@ -92,7 +126,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
     }
   }
 
-  /// 2. Proses Verifikasi Smart Hybrid AI (Online Gemini -> Auto-Fallback Local -> Simpan Profil)
+  /// 2. Proses Unggah Foto Profil ke Server BaknusMail
   Future<void> _processUpload() async {
     if (_base64Image == null) return;
 
@@ -103,65 +137,96 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
 
     setState(() {
       _isProcessing = true;
-      _statusText = 'Memeriksa foto dengan Baknus AI Online...';
+      _statusText = _validateWithAI
+          ? 'Memeriksa foto dengan BaknusAI Online...'
+          : 'Mengunggah foto profil ke server...';
     });
 
-    await avatarApi.processSmartAvatarUpload(
-      jwtToken: jwtToken,
-      base64Image: _base64Image!,
-      userEmail: userEmail,
-
-      onStatusUpdate: (statusMsg) {
-        if (mounted) {
-          setState(() {
-            _statusText = statusMsg;
-          });
-        }
-      },
-      onSuccess: (successMsg) async {
-        // Simpan di state local AuthProvider & StorageService
-        await auth.updateAvatarState(_base64Image!);
-
-        if (mounted) {
-          setState(() {
-            _isProcessing = false;
-          });
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle_rounded, color: Colors.white),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(successMsg),
-                  ),
-                ],
+    if (_validateWithAI) {
+      await avatarApi.processSmartAvatarUpload(
+        jwtToken: jwtToken,
+        base64Image: _base64Image!,
+        userEmail: userEmail,
+        validateAvatarWithAI: true,
+        onStatusUpdate: (statusMsg) {
+          if (mounted) setState(() => _statusText = statusMsg);
+        },
+        onSuccess: (successMsg) async {
+          await auth.updateAvatarState(_base64Image!);
+          if (mounted) {
+            setState(() => _isProcessing = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.check_circle_rounded, color: Colors.white),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(successMsg)),
+                  ],
+                ),
+                backgroundColor: const Color(0xFF059669),
+                behavior: SnackBarBehavior.floating,
               ),
-              backgroundColor: const Color(0xFF059669),
+            );
+            Navigator.of(context).pop(true);
+          }
+        },
+        onError: (errorMsg) async {
+          if (mounted) {
+            setState(() {
+              _isProcessing = false;
+              _statusText = '';
+            });
+            await _showResultDialog(
+              title: 'Foto Ditolak oleh AI',
+              message: errorMsg,
+              isWarning: true,
+            );
+          }
+        },
+      );
+    } else {
+      // Upload langsung (validateAvatarWithAI: false) tanpa AI
+      final res = await BaknusMailProfileService.updateProfile(
+        email: userEmail,
+        avatarBase64: _base64Image,
+        validateWithAI: false,
+      );
+
+      if (!mounted) return;
+
+      if (res['success'] == true) {
+        await auth.updateAvatarState(_base64Image!);
+        setState(() => _isProcessing = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white),
+                const SizedBox(width: 10),
+                Expanded(child: Text(res['message'] ?? 'Foto profil berhasil diperbarui!')),
+              ],
             ),
-          );
-
-          Navigator.of(context).pop(true);
-        }
-      },
-      onError: (errorMsg) async {
-        if (mounted) {
-          setState(() {
-            _isProcessing = false;
-            _statusText = '';
-          });
-
-          await _showResultDialog(
-            title: errorMsg.contains("Habis") || errorMsg.contains("Batas")
-                ? 'Batas Kuota Harian Habis'
-                : 'Foto Ditolak oleh AI',
-            message: errorMsg,
-            isWarning: true,
-          );
-        }
-      },
-    );
+            backgroundColor: const Color(0xFF059669),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).pop(true);
+      } else {
+        setState(() {
+          _isProcessing = false;
+          _statusText = '';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['error'] ?? 'Gagal memperbarui profil'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   /// Dialog Peringatan jika Foto Ditolak AI atau Kuota Habis
@@ -241,7 +306,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  'Verifikasi Otomatis BaknusAI',
+                  'Integrasi Profil BaknusMail',
                   style: TextStyle(fontSize: 11.5, color: Colors.grey),
                 ),
               ],
@@ -292,7 +357,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                     ),
                   ),
 
-                  // Overlay Loading Spinner jika sedang verifikasi AI
+                  // Overlay Loading Spinner jika sedang mengunggah
                   if (_isProcessing)
                     Positioned.fill(
                       child: Container(
@@ -313,7 +378,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
             ),
             const SizedBox(height: 16),
 
-            // Status Text / Info AI
+            // Status Text / Info
             if (_isProcessing)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -354,14 +419,14 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                 child: const Row(
                   children: [
                     Icon(
-                      Icons.shield_outlined,
+                      Icons.check_circle_outline_rounded,
                       size: 18,
                       color: AppColors.primary,
                     ),
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Foto akan diverifikasi AI (128x128). Pastikan foto wajah Anda terlihat jelas.',
+                        'Foto dari HP/Galeri akan langsung ter-update ke server tanpa hambatan.',
                         style: TextStyle(fontSize: 11, height: 1.3),
                       ),
                     ),
@@ -369,25 +434,68 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                 ),
               ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            // Tombol Pilih Foto Galeri
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            // Switch Toggle Verifikasi AI Opsional
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: _validateWithAI,
+              activeColor: AppColors.primary,
+              title: const Text(
+                'Verifikasi dengan BaknusAI',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                'Opsional: Memeriksa keselarasan wajah sebelum upload',
+                style: TextStyle(fontSize: 10.5, color: Colors.grey),
+              ),
+              onChanged: _isProcessing
+                  ? null
+                  : (val) {
+                      setState(() => _validateWithAI = val);
+                    },
+            ),
+
+            const SizedBox(height: 12),
+
+            // Tombol Pilih Foto Galeri & Kamera
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onPressed: _isProcessing ? null : () => _pickImage(ImageSource.gallery),
+                    icon: const Icon(Icons.photo_library_rounded, size: 16),
+                    label: const Text(
+                      'Galeri HP',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                    ),
                   ),
                 ),
-                onPressed: _isProcessing ? null : _pickImage,
-                icon: const Icon(Icons.photo_library_rounded, size: 18),
-                label: Text(
-                  _selectedBytes != null ? 'Pilih Foto Lain' : 'Pilih Foto dari Galeri',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onPressed: _isProcessing ? null : () => _pickImage(ImageSource.camera),
+                    icon: const Icon(Icons.camera_alt_rounded, size: 16),
+                    label: const Text(
+                      'Kamera',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ],
         ),
@@ -405,7 +513,10 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
             ),
           ),
           onPressed: (_isProcessing || _base64Image == null) ? null : _processUpload,
-          child: const Text('Verifikasi & Simpan', style: TextStyle(color: Colors.white)),
+          child: Text(
+            _validateWithAI ? 'Verifikasi & Simpan' : 'Simpan Foto Profil',
+            style: const TextStyle(color: Colors.white),
+          ),
         ),
       ],
     );
