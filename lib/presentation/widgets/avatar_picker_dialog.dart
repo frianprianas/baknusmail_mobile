@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -197,6 +196,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
 
       if (res['success'] == true) {
         await auth.updateAvatarState(_base64Image!);
+        if (!mounted) return;
         setState(() => _isProcessing = false);
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -441,7 +441,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
               contentPadding: EdgeInsets.zero,
               dense: true,
               value: _validateWithAI,
-              activeColor: AppColors.primary,
+              activeTrackColor: AppColors.primary,
               title: const Text(
                 'Verifikasi dengan BaknusAI',
                 style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
