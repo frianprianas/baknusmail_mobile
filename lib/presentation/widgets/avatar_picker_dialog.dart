@@ -4,9 +4,11 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/services/avatar_api_service.dart';
+import '../../data/services/baknus_ai_client_service.dart';
 import '../../data/services/baknusmail_profile_service.dart';
 import '../../providers/auth_provider.dart';
 
@@ -29,7 +31,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
   Uint8List? _selectedBytes;
   String? _base64Image;
   bool _isProcessing = false;
-  bool _validateWithAI = false;
+  bool _validateWithAI = true;
   String _statusText = '';
 
   /// Resize & optimasi image bytes
@@ -129,103 +131,99 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
   Future<void> _processUpload() async {
     if (_base64Image == null) return;
 
+    // 1. Cek Kuota Harian (Maksimal 2x Per Hari)
+    final canUpload = await BaknusAIClientService.canChangeAvatarToday();
+    if (!canUpload) {
+      if (mounted) {
+        await _showResultDialog(
+          title: 'Batas Kuota Harian',
+          message: 'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.',
+          isWarning: true,
+        );
+      }
+      return;
+    }
+
     final auth = context.read<AuthProvider>();
-    final avatarApi = context.read<AvatarApiService>();
-    final jwtToken = auth.currentUser?.password ?? '';
     final userEmail = auth.currentUser?.email ?? '';
 
     setState(() {
       _isProcessing = true;
-      _statusText = _validateWithAI
-          ? 'Memeriksa foto dengan BaknusAI Online...'
-          : 'Mengunggah foto profil ke server...';
+      _statusText = 'sedang discan oleh BaknusAI';
     });
 
     if (_validateWithAI) {
-      await avatarApi.processSmartAvatarUpload(
-        jwtToken: jwtToken,
+      final aiResult = await BaknusAIClientService.validateProfilePhoto(
         base64Image: _base64Image!,
-        userEmail: userEmail,
-        validateAvatarWithAI: true,
-        onStatusUpdate: (statusMsg) {
-          if (mounted) setState(() => _statusText = statusMsg);
-        },
-        onSuccess: (successMsg) async {
-          await auth.updateAvatarState(_base64Image!);
-          if (mounted) {
-            setState(() => _isProcessing = false);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Row(
-                  children: [
-                    const Icon(Icons.check_circle_rounded, color: Colors.white),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text(successMsg)),
-                  ],
-                ),
-                backgroundColor: const Color(0xFF059669),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-            Navigator.of(context).pop(true);
-          }
-        },
-        onError: (errorMsg) async {
-          if (mounted) {
-            setState(() {
-              _isProcessing = false;
-              _statusText = '';
-            });
-            await _showResultDialog(
-              title: 'Foto Ditolak oleh AI',
-              message: errorMsg,
-              isWarning: true,
-            );
-          }
-        },
-      );
-    } else {
-      // Upload langsung (validateAvatarWithAI: false) tanpa AI
-      final res = await BaknusMailProfileService.updateProfile(
-        email: userEmail,
-        avatarBase64: _base64Image,
-        validateWithAI: false,
       );
 
       if (!mounted) return;
 
-      if (res['success'] == true) {
-        await auth.updateAvatarState(_base64Image!);
-        if (!mounted) return;
-        setState(() => _isProcessing = false);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_rounded, color: Colors.white),
-                const SizedBox(width: 10),
-                Expanded(child: Text(res['message'] ?? 'Foto profil berhasil diperbarui!')),
-              ],
-            ),
-            backgroundColor: const Color(0xFF059669),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        Navigator.of(context).pop(true);
-      } else {
+      if (aiResult['isApproved'] != true) {
         setState(() {
           _isProcessing = false;
           _statusText = '';
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(res['error'] ?? 'Gagal memperbarui profil'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+
+        final reason = aiResult['reason']?.toString() ??
+            'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.';
+        await _showResultDialog(
+          title: 'Hasil Scan BaknusAI',
+          message: reason,
+          isWarning: true,
         );
+        return;
       }
+    }
+
+    setState(() {
+      _statusText = 'Mengunggah foto profil ke server...';
+    });
+
+    // Upload ke server backend
+    final res = await BaknusMailProfileService.updateProfile(
+      email: userEmail,
+      avatarBase64: _base64Image,
+      validateWithAI: false,
+    );
+
+    if (!mounted) return;
+
+    if (res['success'] == true) {
+      await BaknusAIClientService.incrementDailyAvatarCount();
+      await auth.updateAvatarState(_base64Image!);
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(child: Text(res['message'] ?? 'Foto profil berhasil diperbarui!')),
+            ],
+          ),
+          backgroundColor: const Color(0xFF059669),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() {
+        _isProcessing = false;
+        _statusText = '';
+      });
+
+      final errMsg = res['error']?.toString() ??
+          'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errMsg),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -268,7 +266,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
               ),
             ),
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Pilih Foto Lain', style: TextStyle(color: Colors.white)),
+            child: const Text('Mengerti', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -306,7 +304,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  'Integrasi Profil BaknusMail',
+                  'Pemindai Otomatis BaknusAI',
                   style: TextStyle(fontSize: 11.5, color: Colors.grey),
                 ),
               ],
@@ -320,23 +318,26 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
           children: [
             const SizedBox(height: 8),
 
-            // Preview Circle Avatar
+            // Preview Circle Avatar dengan Animasi Scan BaknusAI
             Center(
               child: Stack(
+                alignment: Alignment.center,
                 children: [
                   Container(
-                    width: 110,
-                    height: 110,
+                    width: 115,
+                    height: 115,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.4),
+                        color: _isProcessing
+                            ? AppColors.primary
+                            : AppColors.primary.withValues(alpha: 0.4),
                         width: 3,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.15),
-                          blurRadius: 12,
+                          color: AppColors.primary.withValues(alpha: 0.18),
+                          blurRadius: 14,
                         ),
                       ],
                     ),
@@ -357,19 +358,22 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                     ),
                   ),
 
-                  // Overlay Loading Spinner jika sedang mengunggah
+                  // Overlay Animasi Loading Scan BaknusAI
                   if (_isProcessing)
                     Positioned.fill(
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
+                          color: Colors.black.withValues(alpha: 0.62),
                           shape: BoxShape.circle,
                         ),
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color: Colors.white,
-                          ),
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SpinKitRipple(
+                              color: AppColors.primary,
+                              size: 60,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -378,28 +382,31 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
             ),
             const SizedBox(height: 16),
 
-            // Status Text / Info
+            // Status Text / Info Scan BaknusAI
             if (_isProcessing)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+                  color: AppColors.primary.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                    const SpinKitThreeBounce(
+                      color: AppColors.primary,
+                      size: 16,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        _statusText,
+                        _statusText.isNotEmpty ? _statusText : 'sedang discan oleh BaknusAI',
                         style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
                           color: AppColors.primary,
                         ),
                       ),
@@ -419,14 +426,14 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                 child: const Row(
                   children: [
                     Icon(
-                      Icons.check_circle_outline_rounded,
+                      Icons.shield_outlined,
                       size: 18,
                       color: AppColors.primary,
                     ),
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Foto dari HP/Galeri akan langsung ter-update ke server tanpa hambatan.',
+                        'Foto akan di-scan BaknusAI (Maks 1 orang, tanpa vape/rokok/nude/gestur tidak sopan). Maks 2x/hari.',
                         style: TextStyle(fontSize: 11, height: 1.3),
                       ),
                     ),
