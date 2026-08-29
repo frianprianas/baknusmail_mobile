@@ -1372,7 +1372,7 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
               if (drive != null && drive.lastAccessed.isNotEmpty)
                 Flexible(
                   child: Text(
-                    'Akses: ${drive.lastAccessed}',
+                    'Akses: ${drive.formattedLastAccessed}',
                     style: TextStyle(
                       fontSize: 11,
                       color: isDark
@@ -1384,6 +1384,7 @@ class _BaknusPortalScreenState extends State<BaknusPortalScreen> {
                     textAlign: TextAlign.end,
                   ),
                 ),
+
             ],
           ),
         ],

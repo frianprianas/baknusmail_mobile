@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+
 import '../data/models/email_message.dart';
 import '../data/models/folder_info.dart';
 import '../data/models/attachment_item.dart';

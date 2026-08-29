@@ -1,4 +1,7 @@
+import 'package:flutter/material.dart';
+
 class DetailKehadiran {
+
   final String waktuTap;
   final String? waktuMasuk;
   final String? waktuPulang;
@@ -256,12 +259,100 @@ class StorageInfo {
   }
 }
 
+class DriveFileItem {
+  final String fileId;
+  final String filename;
+  final int fileSize;
+  final String fileType;
+  final String path;
+  final DateTime? updatedAt;
+  final String downloadUrl;
+
+  DriveFileItem({
+    required this.fileId,
+    required this.filename,
+    required this.fileSize,
+    required this.fileType,
+    required this.path,
+    this.updatedAt,
+    this.downloadUrl = '',
+  });
+
+  factory DriveFileItem.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(dynamic val) {
+      if (val is String && val.isNotEmpty) {
+        return DateTime.tryParse(val);
+      }
+      return null;
+    }
+
+    return DriveFileItem(
+      fileId: json['file_id']?.toString() ?? json['id']?.toString() ?? '',
+      filename: json['filename']?.toString() ?? json['name']?.toString() ?? 'File',
+      fileSize: int.tryParse(json['file_size']?.toString() ?? json['size']?.toString() ?? '0') ?? 0,
+      fileType: json['file_type']?.toString() ?? json['type']?.toString() ?? 'other',
+      path: json['path']?.toString() ?? '',
+      updatedAt: parseDate(json['updated_at']),
+      downloadUrl: json['download_url']?.toString() ?? json['url']?.toString() ?? '',
+    );
+  }
+
+  String get formattedSize => StorageInfo.formatBytes(fileSize);
+
+  IconData get fileIcon {
+    final type = fileType.toLowerCase();
+    final ext = filename.contains('.') ? filename.split('.').last.toLowerCase() : '';
+
+    if (type == 'video' || ['mp4', 'mkv', 'avi', 'mov', 'webm'].contains(ext)) {
+      return Icons.video_file_rounded;
+    } else if (type == 'image' || ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'psd'].contains(ext)) {
+      return Icons.image_rounded;
+    } else if (type == 'document' || ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'].contains(ext)) {
+      return Icons.description_rounded;
+    } else if (type == 'archive' || ['zip', 'rar', '7z', 'tar', 'gz'].contains(ext)) {
+      return Icons.folder_zip_rounded;
+    } else if (type == 'audio' || ['mp3', 'wav', 'aac', 'm4a', 'flac'].contains(ext)) {
+      return Icons.audio_file_rounded;
+    }
+    return Icons.insert_drive_file_rounded;
+  }
+
+  Color get typeColor {
+    final type = fileType.toLowerCase();
+    final ext = filename.contains('.') ? filename.split('.').last.toLowerCase() : '';
+
+    if (type == 'video' || ['mp4', 'mkv', 'avi', 'mov', 'webm'].contains(ext)) {
+      return const Color(0xFFEF4444); // Red
+    } else if (type == 'image' || ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'psd'].contains(ext)) {
+      return const Color(0xFF0284C7); // Sky Blue
+    } else if (type == 'document' || ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'].contains(ext)) {
+      return const Color(0xFF10B981); // Emerald Green
+    } else if (type == 'archive' || ['zip', 'rar', '7z', 'tar', 'gz'].contains(ext)) {
+      return const Color(0xFFF59E0B); // Amber
+    } else if (type == 'audio' || ['mp3', 'wav', 'aac', 'm4a', 'flac'].contains(ext)) {
+      return const Color(0xFF8B5CF6); // Purple
+    }
+    return const Color(0xFF64748B); // Slate
+  }
+
+  String get formattedDate {
+    if (updatedAt == null) return '';
+    final dt = updatedAt!.toLocal();
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+      'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
+    ];
+    return '${dt.day.toString().padLeft(2, '0')} ${months[dt.month - 1]} ${dt.year}';
+  }
+}
+
 class BaknusDriveData {
   final String email;
   final String name;
   final String role;
   final String lastAccessed;
   final StorageInfo storage;
+  final List<DriveFileItem> largestFiles;
 
   BaknusDriveData({
     required this.email,
@@ -269,19 +360,90 @@ class BaknusDriveData {
     required this.role,
     required this.lastAccessed,
     required this.storage,
+    this.largestFiles = const [],
   });
 
   factory BaknusDriveData.fromJson(Map<String, dynamic> json) {
     final storageJson = json['storage'] as Map<String, dynamic>? ?? {};
+    final filesList = json['largest_files'] as List? ?? [];
+    final largestFiles = filesList
+        .map((item) => DriveFileItem.fromJson(item as Map<String, dynamic>))
+        .toList();
+
     return BaknusDriveData(
       email: json['email']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       role: json['role']?.toString() ?? 'Guru',
       lastAccessed: json['last_accessed']?.toString() ?? '',
       storage: StorageInfo.fromJson(storageJson),
+      largestFiles: largestFiles,
     );
   }
+
+
+  /// Format waktu terakhir akses Drive ke Bahasa Indonesia
+  String get formattedLastAccessed {
+    if (lastAccessed.isEmpty || lastAccessed == '-') return 'Belum pernah diakses';
+
+    DateTime? dt = DateTime.tryParse(lastAccessed);
+
+    // 1. Coba parse jika formatnya integer epoch timestamp
+    if (dt == null && RegExp(r'^\d+$').hasMatch(lastAccessed.trim())) {
+      final val = int.tryParse(lastAccessed.trim());
+      if (val != null) {
+        if (val > 100000000000) {
+          dt = DateTime.fromMillisecondsSinceEpoch(val);
+        } else if (val > 1000000000) {
+          dt = DateTime.fromMillisecondsSinceEpoch(val * 1000);
+        }
+      }
+    }
+
+    // 2. Coba parse jika formatnya "2026-08-28 14:30:00"
+    if (dt == null) {
+      try {
+        final formatted = lastAccessed.trim().replaceAll(' ', 'T');
+        dt = DateTime.tryParse(formatted);
+      } catch (_) {}
+    }
+
+    if (dt != null) {
+      final localDt = dt.toLocal();
+      final now = DateTime.now();
+      const months = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+
+      final isToday = localDt.year == now.year &&
+          localDt.month == now.month &&
+          localDt.day == now.day;
+
+      final yesterday = now.subtract(const Duration(days: 1));
+      final isYesterday = localDt.year == yesterday.year &&
+          localDt.month == yesterday.month &&
+          localDt.day == yesterday.day;
+
+      final hour = localDt.hour.toString().padLeft(2, '0');
+      final min = localDt.minute.toString().padLeft(2, '0');
+
+      if (isToday) {
+        return 'Hari ini, $hour:$min WIB';
+      } else if (isYesterday) {
+        return 'Kemarin, $hour:$min WIB';
+      } else {
+        final day = localDt.day.toString().padLeft(2, '0');
+        final month = months[localDt.month - 1];
+        final year = localDt.year;
+        return '$day $month $year, $hour:$min WIB';
+      }
+    }
+
+    // Fallback jika string tanggal unik
+    return lastAccessed.replaceAll('T', ' ').replaceAll('.000000Z', ' WIB');
+  }
 }
+
 
 class BaknusDriveBackup {
   final String backupId;

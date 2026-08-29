@@ -10,6 +10,7 @@ import '../../data/models/email_message.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/mail_provider.dart';
 import '../../providers/mailcow_provider.dart';
+import '../../data/services/fcm_service.dart';
 import '../widgets/user_avatar.dart';
 
 import '../widgets/app_background.dart';
@@ -209,6 +210,14 @@ class _ComposeScreenState extends State<ComposeScreen> {
     if (mounted) {
       setState(() => _isSending = false);
       if (success) {
+        try {
+          final fcmService = context.read<FCMService>();
+          fcmService.showSentEmailNotification(
+            to: _toRecipients.join(', '),
+            subject: subject,
+          );
+        } catch (_) {}
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✓ Pesan berhasil dikirim via Mailcow Server'),

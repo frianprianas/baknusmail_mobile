@@ -86,7 +86,9 @@ class FCMService {
           message.data['email_from'] ?? message.data['from'] ?? message.data['sender_name'] ?? '';
       final subjectStr =
           message.data['subject'] ?? message.data['title'] ?? message.data['notif_title'] ?? '';
-      final config = _getChannelAndSound(senderStr, subjectStr);
+      final titleStr = message.data['notif_title'] ?? message.notification?.title ?? '';
+      final bodyStr = message.data['notif_body'] ?? message.data['body'] ?? message.data['message'] ?? message.notification?.body ?? '';
+      final config = _getChannelAndSound(senderStr, subjectStr, titleStr, bodyStr);
       if (config['id'] == 'channel_baknus_attend_v3') {
         route = '/attend';
       } else if (config['id'] == 'channel_baknus_drive_v3') {
@@ -121,7 +123,9 @@ class FCMService {
             decoded['email_from'] ?? decoded['from'] ?? decoded['sender_name'] ?? '';
         final subjectStr =
             decoded['subject'] ?? decoded['title'] ?? decoded['notif_title'] ?? '';
-        final config = _getChannelAndSound(senderStr, subjectStr);
+        final titleStr = decoded['notif_title'] ?? decoded['title'] ?? '';
+        final bodyStr = decoded['notif_body'] ?? decoded['body'] ?? decoded['message'] ?? '';
+        final config = _getChannelAndSound(senderStr, subjectStr, titleStr, bodyStr);
         if (config['id'] == 'channel_baknus_attend_v3') {
           route = '/attend';
         } else if (config['id'] == 'channel_baknus_drive_v3') {
@@ -323,40 +327,34 @@ class FCMService {
     await _showLocalNotification(message);
   }
 
-  // Mendapatkan channel dan suara berdasarkan pengirim & subjek email
-  Map<String, String> _getChannelAndSound(String sender, String subject) {
-    final lowerSender = sender.toLowerCase();
-    final lowerSubject = subject.toLowerCase();
+  // Mendapatkan channel dan suara berdasarkan pengirim, subjek, judul, & isi pesan
+  Map<String, String> _getChannelAndSound(String sender, String subject, [String? title, String? body]) {
+    final combined = '${sender.toLowerCase()} ${subject.toLowerCase()} ${title?.toLowerCase() ?? ''} ${body?.toLowerCase() ?? ''}';
 
-    if (lowerSender.contains('attend') ||
-        lowerSender.contains('presensi') ||
-        lowerSubject.contains('baknusattend') ||
-        lowerSubject.contains('attend') ||
-        lowerSubject.contains('presensi') ||
-        lowerSubject.contains('kehadiran')) {
+    if (combined.contains('attend') ||
+        combined.contains('presensi') ||
+        combined.contains('kehadiran') ||
+        combined.contains('baknusattend')) {
       return {
         'id': 'channel_baknus_attend_v3',
         'name': 'BaknusAttend Notifications',
         'desc': 'Notifikasi presensi dan kehadiran BaknusAttend',
         'sound': 'sound_baknus_attend',
       };
-    } else if (lowerSender.contains('drive') ||
-        lowerSubject.contains('baknusdrive') ||
-        lowerSubject.contains('drive') ||
-        lowerSubject.contains('berkas') ||
-        lowerSubject.contains('penyimpanan')) {
+    } else if (combined.contains('drive') ||
+        combined.contains('berkas') ||
+        combined.contains('penyimpanan') ||
+        combined.contains('baknusdrive')) {
       return {
         'id': 'channel_baknus_drive_v3',
         'name': 'BaknusDrive Notifications',
         'desc': 'Notifikasi penyimpanan dan berkas BaknusDrive',
         'sound': 'sound_baknus_drive',
       };
-    } else if (lowerSender.contains('talim') ||
-        lowerSender.contains('ta\'lim') ||
-        lowerSubject.contains('baknustalim') ||
-        lowerSubject.contains('talim') ||
-        lowerSubject.contains('ta\'lim') ||
-        lowerSubject.contains('kajian')) {
+    } else if (combined.contains('talim') ||
+        combined.contains('ta\'lim') ||
+        combined.contains('kajian') ||
+        combined.contains('baknustalim')) {
       return {
         'id': 'channel_baknus_talim_v3',
         'name': 'BaknusTalim Notifications',
@@ -379,29 +377,39 @@ class FCMService {
         message.data['email_from'] ?? message.data['from'] ?? message.data['sender_name'] ?? '';
     final String subjectStr =
         message.data['subject'] ?? message.data['title'] ?? message.data['notif_title'] ?? '';
+    final String titleFromPayload = message.data['notif_title'] ?? message.notification?.title ?? '';
+    final String bodyFromPayload = message.data['notif_body'] ?? message.data['body'] ?? message.data['message'] ?? message.data['text'] ?? message.notification?.body ?? '';
 
     // Smart detection channel & sound
-    final autoDetectedConfig = _getChannelAndSound(senderStr, subjectStr);
+    final autoDetectedConfig = _getChannelAndSound(senderStr, subjectStr, titleFromPayload, bodyFromPayload);
     final String channelIdFromData = message.data['channel_id'] ?? '';
     final String soundNameFromData = message.data['sound_name'] ?? '';
 
     late Map<String, String> channelConfig;
-    if (channelIdFromData.isNotEmpty &&
-        soundNameFromData.isNotEmpty &&
-        channelIdFromData != 'channel_email_umum_v3') {
+    if (channelIdFromData.isNotEmpty) {
+      String sound = soundNameFromData;
+      if (sound.isEmpty) {
+        if (channelIdFromData == 'channel_baknus_attend_v3') {
+          sound = 'sound_baknus_attend';
+        } else if (channelIdFromData == 'channel_baknus_drive_v3') {
+          sound = 'sound_baknus_drive';
+        } else if (channelIdFromData == 'channel_baknus_talim_v3') {
+          sound = 'sound_baknus_talim';
+        } else {
+          sound = 'sound_umum';
+        }
+      }
       channelConfig = {
         'id': channelIdFromData,
-        'name': 'Email & Chat Notifications',
-        'desc': 'Notifikasi pesan BaknusMail',
-        'sound': soundNameFromData,
+        'name': 'Notifikasi BaknusMail',
+        'desc': 'Notifikasi layanan BaknusMail',
+        'sound': sound,
       };
     } else {
       channelConfig = autoDetectedConfig;
     }
 
-    String title = message.data['notif_title'] ??
-        message.notification?.title ??
-        '';
+    String title = titleFromPayload;
     if (title.isEmpty || title == 'Pesan Masuk' || title == 'Email Baru') {
       if (channelConfig['id'] == 'channel_baknus_attend_v3') {
         title = 'BaknusAttend - Presensi';
@@ -414,9 +422,9 @@ class FCMService {
       }
     }
 
-    final String body = message.data['notif_body'] ??
-        message.notification?.body ??
-        (subjectStr.isNotEmpty ? subjectStr : 'Anda mendapat pesan masuk');
+    final String body = bodyFromPayload.isNotEmpty
+        ? bodyFromPayload
+        : (subjectStr.isNotEmpty ? subjectStr : 'Anda mendapat pesan masuk');
 
     String targetRoute = message.data['route'] ?? '';
     if (targetRoute.isEmpty || targetRoute == '/home') {
@@ -579,4 +587,42 @@ class FCMService {
       debugPrint('Warning: Error unregistering FCM token: $e');
     }
   }
+
+  /// Menampilkan notifikasi lokal ketika email berhasil dikirim ("Kirim Email")
+  Future<void> showSentEmailNotification({
+    required String to,
+    required String subject,
+  }) async {
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'channel_email_umum_v3',
+      'Email Notifications',
+      channelDescription: 'Notifikasi email umum & pesan',
+      importance: Importance.max,
+      priority: Priority.high,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('sound_umum'),
+      showWhen: true,
+      tag: 'baknus_sent_email',
+      groupKey: 'com.baknus.baknusmail.NOTIFICATIONS',
+    );
+
+    const NotificationDetails platformDetails =
+        NotificationDetails(android: androidDetails);
+
+    final notifId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final payloadMap = {
+      'route': '/home',
+      'title': 'Email Terkirim',
+      'body': 'Kepada: $to | Subjek: $subject',
+    };
+
+    await _localNotificationsPlugin.show(
+      id: notifId,
+      title: '✓ Email Terkirim',
+      body: 'Kepada: $to\nSubjek: ${subject.isNotEmpty ? subject : "(Tanpa Subjek)"}',
+      notificationDetails: platformDetails,
+      payload: jsonEncode(payloadMap),
+    );
+  }
 }
+

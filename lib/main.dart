@@ -33,22 +33,20 @@ import 'presentation/screens/compose_screen.dart';
 import 'presentation/screens/server_status_screen.dart';
 import 'presentation/screens/settings_screen.dart';
 import 'presentation/screens/baknus_chat_screen.dart';
+import 'presentation/screens/weather_traffic_detail_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   debugPrint("Handling a background message: ${message.messageId}");
-  // Jika pesan sudah memiliki payload 'notification', OS Android FCM otomatis menampilkannya.
-  // Hanya panggil showBackgroundNotification jika payload bertipe data-only (notification == null).
-  if (message.notification == null) {
-    try {
-      final fcmService = FCMService();
-      await fcmService.showBackgroundNotification(message);
-    } catch (e) {
-      debugPrint("Background notification error: $e");
-    }
+  try {
+    final fcmService = FCMService();
+    await fcmService.showBackgroundNotification(message);
+  } catch (e) {
+    debugPrint("Background notification error: $e");
   }
 }
 
@@ -162,7 +160,9 @@ class BaknusMailApp extends StatelessWidget {
         '/server_status': (context) => const ServerStatusScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/chat': (context) => const BaknusChatScreen(),
+        '/weather_traffic_detail': (context) => const WeatherTrafficDetailScreen(),
       },
     );
   }
 }
+

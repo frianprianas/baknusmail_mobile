@@ -99,6 +99,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
     final auth = context.read<AuthProvider>();
     final avatarApi = context.read<AvatarApiService>();
     final jwtToken = auth.currentUser?.password ?? '';
+    final userEmail = auth.currentUser?.email ?? '';
 
     setState(() {
       _isProcessing = true;
@@ -108,6 +109,8 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
     await avatarApi.processSmartAvatarUpload(
       jwtToken: jwtToken,
       base64Image: _base64Image!,
+      userEmail: userEmail,
+
       onStatusUpdate: (statusMsg) {
         if (mounted) {
           setState(() {
