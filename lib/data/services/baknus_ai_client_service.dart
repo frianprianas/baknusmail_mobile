@@ -7,12 +7,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Menggunakan Endpoint Aivene AI (Gemini 2.5 Flash Vision Model).
 class BaknusAIClientService {
   static const int maxDailyUploads = 2;
+  static const String fallbackApiKey = 'isk-bhnSFoDz8ca3eEkjIqr4QIm5kRB40c7CEeFSVyKb';
 
-  /// Membaca API Key dari environment variables (--dart-define / env.json)
-  static const String aiveneApiKey = String.fromEnvironment(
-    'AIVENE_API_KEY',
-    defaultValue: String.fromEnvironment('GEMINI_API_KEY', defaultValue: ''),
-  );
+  /// Membaca API Key dari environment variables (--dart-define / env.json) dengan fallback
+  static String get aiveneApiKey {
+    const envKey = String.fromEnvironment('AIVENE_API_KEY', defaultValue: '');
+    if (envKey.isNotEmpty && !envKey.contains('MASUKKAN_')) {
+      return envKey;
+    }
+    const geminiEnvKey = String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
+    if (geminiEnvKey.isNotEmpty && !geminiEnvKey.contains('MASUKKAN_')) {
+      return geminiEnvKey;
+    }
+    return fallbackApiKey;
+  }
 
   static const String _aiveneEndpoint =
       'https://api.aivene.com/v1/chat/completions';
@@ -64,18 +72,17 @@ class BaknusAIClientService {
         ? customApiKey
         : aiveneApiKey;
 
-    if (activeKey.isEmpty || activeKey.contains('MASUKKAN_')) {
+    if (activeKey.isEmpty) {
       return {
         'isApproved': false,
-        'reason':
-            'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.',
+        'reason': 'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.',
       };
     }
 
     try {
-      String cleanBase64 = base64Image;
-      if (!cleanBase64.startsWith('data:image')) {
-        cleanBase64 = 'data:image/jpeg;base64,$cleanBase64';
+      String imageUrl = base64Image;
+      if (!imageUrl.startsWith('data:image')) {
+        imageUrl = 'data:image/jpeg;base64,$imageUrl';
       }
 
       final url = Uri.parse(_aiveneEndpoint);
@@ -102,7 +109,7 @@ class BaknusAIClientService {
               {
                 "type": "image_url",
                 "image_url": {
-                  "url": cleanBase64,
+                  "url": imageUrl,
                 }
               }
             ]
@@ -127,26 +134,32 @@ class BaknusAIClientService {
         String rawContent =
             data?['choices']?[0]?['message']?['content']?.toString() ?? '{}';
 
-        // Bersihkan formatting ```json ... ``` jika dikembalikan oleh LLM
-        rawContent = rawContent.replaceAll(RegExp(r'```json\s*'), '');
-        rawContent = rawContent.replaceAll(RegExp(r'```\s*'), '');
-        rawContent = rawContent.trim();
+        // Bersihkan formatting markdown jika ada (misal ```json ... ```)
+        if (rawContent.contains('{') && rawContent.contains('}')) {
+          final firstBrace = rawContent.indexOf('{');
+          final lastBrace = rawContent.lastIndexOf('}');
+          rawContent = rawContent.substring(firstBrace, lastBrace + 1);
+        }
 
         final Map<String, dynamic> resultJson = jsonDecode(rawContent);
+        final bool isApproved = resultJson['isApproved'] == true;
 
         return {
-          'isApproved': resultJson['isApproved'] ?? false,
-          'reason': resultJson['reason'] ??
-              'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.',
+          'isApproved': isApproved,
+          'reason': resultJson['reason']?.toString() ??
+              (isApproved
+                  ? 'Foto memenuhi syarat'
+                  : 'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.'),
         };
       } else {
+        debugPrint('Aivene API Status Error: ${response.statusCode} - ${response.body}');
         return {
           'isApproved': false,
           'reason': 'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.',
         };
       }
     } catch (e) {
-      debugPrint('BaknusAI Client Validation Error: $e');
+      debugPrint('BaknusAI Client Validation Exception: $e');
       return {
         'isApproved': false,
         'reason': 'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.',
