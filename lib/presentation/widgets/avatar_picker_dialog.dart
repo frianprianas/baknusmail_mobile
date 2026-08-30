@@ -15,6 +15,26 @@ class AvatarPickerDialog extends StatefulWidget {
   const AvatarPickerDialog({super.key});
 
   static Future<bool?> show(BuildContext context) {
+    final auth = context.read<AuthProvider>();
+    if (auth.isParentMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.info_outline_rounded, color: Colors.white),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text('Fitur ini tidak tersedia untuk akun Orang Tua.'),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return Future.value(false);
+    }
+
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -30,7 +50,6 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
   Uint8List? _selectedBytes;
   String? _base64Image;
   bool _isProcessing = false;
-  bool _validateWithAI = true;
   String _statusText = '';
 
   /// Resize & optimasi image bytes
@@ -56,6 +75,9 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
 
   /// 1. Pilih Foto dari Galeri/Kamera dengan ImagePicker / FilePicker
   Future<void> _pickImage([ImageSource source = ImageSource.gallery]) async {
+    final auth = context.read<AuthProvider>();
+    if (auth.isParentMode) return;
+
     try {
       final ImagePicker picker = ImagePicker();
       final XFile? pickedFile = await picker.pickImage(
@@ -133,12 +155,24 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
     final auth = context.read<AuthProvider>();
     final userEmail = auth.currentUser?.email ?? '';
 
-    // 1. Cek Kuota Harian (Maksimal 2x Per Hari)
+    // Cek Mode Orang Tua
+    if (auth.isParentMode) {
+      if (mounted) {
+        await _showResultDialog(
+          title: 'Fitur Dibatasi',
+          message: 'Fitur ini tidak tersedia untuk akun Orang Tua.',
+          isWarning: true,
+        );
+      }
+      return;
+    }
+
+    // Cek Kuota Harian Percobaan (Maksimal 2x Per Hari - Baik Gagal maupun Berhasil)
     final canUpload = await BaknusAIClientService.canChangeAvatarToday();
     if (!canUpload) {
       if (mounted) {
         await _showResultDialog(
-          title: 'Batas Kuota Harian',
+          title: 'Batas Percobaan Harian',
           message: 'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.',
           isWarning: true,
         );
@@ -151,35 +185,37 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
       _statusText = 'sedang discan oleh BaknusAI';
     });
 
-    if (_validateWithAI) {
-      final aiResult = await BaknusAIClientService.validateProfilePhoto(
-        base64Image: _base64Image!,
+    // Catat percobaan ini (Gagal maupun berhasil tetap menghitung kuota)
+    await BaknusAIClientService.incrementDailyAvatarCount();
+
+    // 1. Validasi BaknusAI Client (Default Wajib)
+    final aiResult = await BaknusAIClientService.validateProfilePhoto(
+      base64Image: _base64Image!,
+    );
+
+    if (!mounted) return;
+
+    if (aiResult['isApproved'] != true) {
+      setState(() {
+        _isProcessing = false;
+        _statusText = '';
+      });
+
+      final reason = aiResult['reason']?.toString() ??
+          'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.';
+      await _showResultDialog(
+        title: 'Hasil Scan BaknusAI',
+        message: reason,
+        isWarning: true,
       );
-
-      if (!mounted) return;
-
-      if (aiResult['isApproved'] != true) {
-        setState(() {
-          _isProcessing = false;
-          _statusText = '';
-        });
-
-        final reason = aiResult['reason']?.toString() ??
-            'Fasilitas perubahan foto profil belum tersedia, coba lagi nanti.';
-        await _showResultDialog(
-          title: 'Hasil Scan BaknusAI',
-          message: reason,
-          isWarning: true,
-        );
-        return;
-      }
+      return;
     }
 
     setState(() {
       _statusText = 'Mengunggah foto profil ke server...';
     });
 
-    // Upload ke server backend
+    // 2. Upload ke server backend
     final res = await BaknusMailProfileService.updateProfile(
       email: userEmail,
       avatarBase64: _base64Image,
@@ -189,7 +225,6 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
     if (!mounted) return;
 
     if (res['success'] == true) {
-      await BaknusAIClientService.incrementDailyAvatarCount();
       await auth.updateAvatarState(_base64Image!);
       if (!mounted) return;
       setState(() => _isProcessing = false);
@@ -276,6 +311,8 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final auth = context.watch<AuthProvider>();
+    final isParentMode = auth.isParentMode;
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -284,27 +321,29 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.12),
+              color: isParentMode
+                  ? Colors.grey.withValues(alpha: 0.12)
+                  : AppColors.primary.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.auto_awesome_rounded,
-              color: AppColors.primary,
+            child: Icon(
+              isParentMode ? Icons.block_rounded : Icons.auto_awesome_rounded,
+              color: isParentMode ? Colors.grey : AppColors.primary,
               size: 22,
             ),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Ganti Foto Profil',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  'Pemindai Otomatis BaknusAI',
-                  style: TextStyle(fontSize: 11.5, color: Colors.grey),
+                  isParentMode ? 'Mode Orang Tua' : 'Pemindai Otomatis BaknusAI',
+                  style: const TextStyle(fontSize: 11.5, color: Colors.grey),
                 ),
               ],
             ),
@@ -316,6 +355,29 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 8),
+
+            if (isParentMode)
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, color: Colors.orange, size: 20),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Fitur ini tidak tersedia untuk akun Orang Tua.',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.orange),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             // Preview Circle Avatar dengan Animasi Scan BaknusAI
             Center(
@@ -415,55 +477,32 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
               )
             else
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.06)
                       : Colors.grey.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Row(
                   children: [
                     Icon(
-                      Icons.shield_outlined,
-                      size: 18,
+                      Icons.info_outline_rounded,
+                      size: 20,
                       color: AppColors.primary,
                     ),
-                    SizedBox(width: 8),
+                    SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Foto akan di-scan BaknusAI (Maks 1 orang, tanpa vape/rokok/nude/gestur tidak sopan). Maks 2x/hari.',
-                        style: TextStyle(fontSize: 11, height: 1.3),
+                        'Pergantian foto profil akan mengubah seluruh foto profil pada ekosistem BaknusID.',
+                        style: TextStyle(fontSize: 11.5, height: 1.35, fontWeight: FontWeight.w500),
                       ),
                     ),
                   ],
                 ),
               ),
 
-            const SizedBox(height: 12),
-
-            // Switch Toggle Verifikasi AI Opsional
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              value: _validateWithAI,
-              activeTrackColor: AppColors.primary,
-              title: const Text(
-                'Verifikasi dengan BaknusAI',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text(
-                'Opsional: Memeriksa keselarasan wajah sebelum upload',
-                style: TextStyle(fontSize: 10.5, color: Colors.grey),
-              ),
-              onChanged: _isProcessing
-                  ? null
-                  : (val) {
-                      setState(() => _validateWithAI = val);
-                    },
-            ),
-
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
 
             // Tombol Pilih Foto Galeri & Kamera
             Row(
@@ -476,7 +515,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    onPressed: _isProcessing ? null : () => _pickImage(ImageSource.gallery),
+                    onPressed: (_isProcessing || isParentMode) ? null : () => _pickImage(ImageSource.gallery),
                     icon: const Icon(Icons.photo_library_rounded, size: 16),
                     label: const Text(
                       'Galeri HP',
@@ -493,7 +532,7 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    onPressed: _isProcessing ? null : () => _pickImage(ImageSource.camera),
+                    onPressed: (_isProcessing || isParentMode) ? null : () => _pickImage(ImageSource.camera),
                     icon: const Icon(Icons.camera_alt_rounded, size: 16),
                     label: const Text(
                       'Kamera',
@@ -518,10 +557,10 @@ class _AvatarPickerDialogState extends State<AvatarPickerDialog> {
               borderRadius: BorderRadius.circular(10),
             ),
           ),
-          onPressed: (_isProcessing || _base64Image == null) ? null : _processUpload,
-          child: Text(
-            _validateWithAI ? 'Verifikasi & Simpan' : 'Simpan Foto Profil',
-            style: const TextStyle(color: Colors.white),
+          onPressed: (_isProcessing || _base64Image == null || isParentMode) ? null : _processUpload,
+          child: const Text(
+            'Simpan Foto Profil',
+            style: TextStyle(color: Colors.white),
           ),
         ),
       ],
